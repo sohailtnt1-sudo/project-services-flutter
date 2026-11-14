@@ -1,0 +1,659 @@
+// Supabase data access for Project Services (same project as the website).
+// Uses the anon client + the user's session only — never the service-role key.
+import 'dart:io';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config.dart';
+import 'models.dart';
+
+const double kCommissionRate = 0.15;
+const String kMediaBucket = 'booking-media';
+
+SupabaseClient get db => Supabase.instance.client;
+
+Future<void> initSupabase() async {
+  await Supabase.initialize(
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
+  );
+}
+
+// ---------- Auth ----------
+
+Future<Profile?> currentProfile() async {
+  final user = db.auth.currentUser;
+  if (user == null) return null;
+  final res = await db.from('profiles').select().eq('id', user.id).maybeSingle();
+  if (res == null) return null;
+  return Profile.fromMap(res as Map<String, dynamic>);
+}
+
+/// Create the profiles row for a newly signed-up user (mirrors the website).
+Future<void> ensureProfile({
+  required String fullName,
+  required String phone,
+  required String role,
+}) async {
+  final user = db.auth.currentUser;
+  if (user == null) return;
+  final existing = await db.from('profiles').select('id').eq('id', user.id).maybeSingle();
+  if (existing != null) return;
+  await db.from('profiles').insert({
+    'id': user.id,
+    'full_name': fullName.trim(),
+    'phone': phone.trim().isEmpty ? null : phone.trim(),
+    'email': user.email,
+    'role': role,
+  });
+}
+
+// ---------- Catalog (live) ----------
+
+Future<List<Category>> fetchCategories() async {
+  final res = await db
+      .from('categories')
+      .select('id, name, slug, description, is_active')
+      .eq('is_active', true)
+      .order('name');
+  return (res as List).map((m) => Category.fromMap(m as Map<String, dynamic>)).toList();
+}
+
+Future<List<ServiceItem>> fetchServicesByCategory(String categoryId) async {
+  final res = await db
+      .from('services')
+      .select('id, category_id, name, slug, description, base_price, is_active')
+      .eq('category_id', categoryId)
+      .eq('is_active', true)
+      .order('name');
+  return (res as List).map((m) => ServiceItem.fromMap(m as Map<String, dynamic>)).toList();
+}
+
+Future<List<ServiceItem>> searchServices(String query) async {
+  final res = await db
+      .from('services')
+      .select('id, category_id, name, slug, description, base_price, is_active')
+      .eq('is_active', true)
+      .ilike('name', '%$query%')
+      .order('name')
+      .limit(20);
+  return (res as List).map((m) => ServiceItem.fromMap(m as Map<String, dynamic>)).toList();
+}
+
+Future<List<ServiceItem>> fetchAllServices() async {
+  final res = await db
+      .from('services')
+      .select('id, category_id, name, slug, description, base_price, is_active')
+      .eq('is_active', true)
+      .order('name');
+  return (res as List).map((m) => ServiceItem.fromMap(m as Map<String, dynamic>)).toList();
+}
+
+// ---------- Providers (approved, live) ----------
+
+/// Approved providers who offer [serviceId], with their own charge.
+/// Falls back to every approved provider when a service has no skill rows yet.
+Future<List<Provider>> fetchProvidersForService(String serviceId) async {
+  final skills = await db
+      .from('provider_skills')
+      .select('provider_id, price, service_id')
+      .eq('service_id', serviceId);
+  final priceByProvider = <String, num>{
+    for (final s in (skills as List))
+      (s as Map<String, dynamic>)['provider_id'] as String:
+          ((s)['price'] as num?) ?? 0,
+  };
+  final profiles = await db
+      .from('provider_profiles')
+      .select('id, user_id, bio, city, experience_years, verification_status, is_available, average_rating')
+      .eq('verification_status', 'approved')
+      .order('average_rating', ascending: false);
+  final rows = (profiles as List).cast<Map<String, dynamic>>();
+  final wanted = priceByProvider.isEmpty
+      ? rows
+      : rows.where((r) => priceByProvider.containsKey(r['id'] as String)).toList();
+  final providers = <Provider>[];
+  for (final r in wanted) {
+    final userId = r['user_id'] as String;
+    final prof = await db
+        .from('profiles')
+        .select('full_name, email, phone')
+        .eq('id', userId)
+        .maybeSingle() as Map<String, dynamic>?;
+    providers.add(Provider(
+      id: r['id'] as String,
+      userId: userId,
+      name: (prof?['full_name'] as String?)?.trim().isNotEmpty == true
+          ? (prof!['full_name'] as String)
+          : 'Verified technician',
+      email: prof?['email'] as String?,
+      phone: prof?['phone'] as String?,
+      bio: r['bio'] as String?,
+      city: r['city'] as String?,
+      experienceYears: (r['experience_years'] as num?)?.toInt() ?? 0,
+      verificationStatus: r['verification_status'] as String,
+      isAvailable: (r['is_available'] as bool?) ?? true,
+      averageRating: (r['average_rating'] as num?) ?? 0,
+      price: priceByProvider[r['id'] as String],
+    ));
+  }
+  return providers;
+}
+
+Future<List<Provider>> fetchApprovedProviders({int limit = 6}) async {
+  final profiles = await db
+      .from('provider_profiles')
+      .select('id, user_id, bio, city, experience_years, verification_status, is_available, average_rating')
+      .eq('verification_status', 'approved')
+      .order('average_rating', ascending: false)
+      .limit(limit);
+  final providers = <Provider>[];
+  for (final r in (profiles as List).cast<Map<String, dynamic>>()) {
+    final userId = r['user_id'] as String;
+    final prof = await db
+        .from('profiles')
+        .select('full_name, email, phone')
+        .eq('id', userId)
+        .maybeSingle() as Map<String, dynamic>?;
+    providers.add(Provider(
+      id: r['id'] as String,
+      userId: userId,
+      name: (prof?['full_name'] as String?)?.trim().isNotEmpty == true
+          ? (prof!['full_name'] as String)
+          : 'Verified technician',
+      email: prof?['email'] as String?,
+      phone: prof?['phone'] as String?,
+      bio: r['bio'] as String?,
+      city: r['city'] as String?,
+      experienceYears: (r['experience_years'] as num?)?.toInt() ?? 0,
+      verificationStatus: r['verification_status'] as String,
+      isAvailable: (r['is_available'] as bool?) ?? true,
+      averageRating: (r['average_rating'] as num?) ?? 0,
+    ));
+  }
+  return providers;
+}
+
+// ---------- Bookings ----------
+
+Future<String> createBooking({
+  required String serviceId,
+  required String? providerId,
+  required String description,
+  required DateTime scheduledAt,
+  required String addressText,
+  required String city,
+  required num estimatedPrice,
+  required num commissionAmount,
+}) async {
+  final user = db.auth.currentUser!;
+  String? addressId;
+  if (addressText.trim().isNotEmpty) {
+    final addr = await db
+        .from('addresses')
+        .insert({
+          'user_id': user.id,
+          'label': 'Home',
+          'address_line': addressText.trim(),
+          'city': city.trim().isEmpty ? null : city.trim(),
+          'is_default': false,
+        })
+        .select('id')
+        .single();
+    addressId = (addr as Map<String, dynamic>)['id'] as String;
+  }
+  final row = await db
+      .from('bookings')
+      .insert({
+        'customer_id': user.id,
+        'provider_id': providerId,
+        'service_id': serviceId,
+        'address_id': addressId,
+        'description': description.trim(),
+        'scheduled_at': scheduledAt.toIso8601String(),
+        'estimated_price': estimatedPrice,
+        'commission_amount': commissionAmount,
+        'status': 'pending',
+        'payment_status': 'pending',
+      })
+      .select('id')
+      .single();
+  return (row as Map<String, dynamic>)['id'] as String;
+}
+
+Future<void> uploadBookingPhotos(String bookingId, List<File> files) async {
+  final user = db.auth.currentUser!;
+  for (final file in files) {
+    final name = file.path.split('/').last.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final path = '${user.id}/$bookingId/${DateTime.now().millisecondsSinceEpoch}-$name';
+    await db.storage.from(kMediaBucket).upload(
+          path,
+          file,
+          fileOptions: const FileOptions(upsert: false),
+        );
+    final url = '${AppConfig.supabaseUrl}/storage/v1/object/public/$kMediaBucket/$path';
+    await db.from('booking_media').insert({
+      'booking_id': bookingId,
+      'media_type': 'photo',
+      'media_url': url,
+      'uploaded_by': user.id,
+    });
+  }
+}
+
+Future<List<Booking>> fetchMyBookings() async {
+  final user = db.auth.currentUser!;
+  final res = await db
+      .from('bookings')
+      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, services(name), provider_profiles(id, profiles(full_name))')
+      .eq('customer_id', user.id)
+      .order('created_at', ascending: false);
+  return (res as List).map((m) {
+    final row = m as Map<String, dynamic>;
+    final svc = row['services'];
+    final pp = row['provider_profiles'];
+    String? providerName;
+    if (pp is Map<String, dynamic>) {
+      final p = pp['profiles'];
+      if (p is Map<String, dynamic>) providerName = p['full_name'] as String?;
+    }
+    return Booking(
+      id: row['id'] as String,
+      customerId: row['customer_id'] as String,
+      providerId: row['provider_id'] as String?,
+      serviceId: row['service_id'] as String?,
+      serviceName: svc is Map<String, dynamic> ? (svc['name'] as String? ?? 'Service') : 'Service',
+      providerName: providerName,
+      status: row['status'] as String,
+      paymentStatus: row['payment_status'] as String,
+      description: row['description'] as String?,
+      scheduledAt: row['scheduled_at'] != null ? DateTime.parse(row['scheduled_at'] as String) : null,
+      estimatedPrice: (row['estimated_price'] as num?),
+      finalPrice: (row['final_price'] as num?),
+      commissionAmount: (row['commission_amount'] as num?),
+      createdAt: DateTime.parse(row['created_at'] as String),
+    );
+  }).toList();
+}
+
+Future<List<BookingMedia>> fetchBookingMedia(String bookingId) async {
+  final res = await db
+      .from('booking_media')
+      .select('id, media_type, media_url, created_at')
+      .eq('booking_id', bookingId)
+      .order('created_at', ascending: true);
+  return (res as List).map((m) => BookingMedia.fromMap(m as Map<String, dynamic>)).toList();
+}
+
+Future<List<StatusEvent>> fetchBookingHistory(String bookingId) async {
+  final res = await db
+      .from('booking_status_history')
+      .select('old_status, new_status, changed_at')
+      .eq('booking_id', bookingId)
+      .order('changed_at', ascending: true);
+  return (res as List).map((m) => StatusEvent.fromMap(m as Map<String, dynamic>)).toList();
+}
+
+// ---------- Provider side ----------
+
+Future<Map<String, dynamic>?> fetchMyProviderProfile() async {
+  final user = db.auth.currentUser!;
+  final res = await db
+      .from('provider_profiles')
+      .select('id, user_id, bio, city, experience_years, verification_status, is_available, average_rating')
+      .eq('user_id', user.id)
+      .maybeSingle();
+  return res as Map<String, dynamic>?;
+}
+
+Future<void> setAvailability(bool online) async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return;
+  final providerId = profile['id'] as String;
+  await db.from('provider_profiles').update({'is_available': online}).eq('id', providerId);
+  // Keep the 7 per-day availability rows in sync (09:00-18:00 default).
+  for (var day = 0; day < 7; day++) {
+    await db.from('availability').upsert(
+      {
+        'provider_id': providerId,
+        'day_of_week': day,
+        'start_time': '09:00',
+        'end_time': '18:00',
+        'is_available': online,
+      },
+      onConflict: 'provider_id,day_of_week',
+    );
+  }
+}
+
+Future<List<Booking>> fetchProviderJobs() async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return [];
+  final providerId = profile['id'] as String;
+  final res = await db
+      .from('bookings')
+      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, services(name), profiles!bookings_customer_id_fkey(full_name)')
+      .eq('provider_id', providerId)
+      .order('created_at', ascending: false);
+  return (res as List).map((m) {
+    final row = m as Map<String, dynamic>;
+    final svc = row['services'];
+    final cust = row['profiles'];
+    return Booking(
+      id: row['id'] as String,
+      customerId: row['customer_id'] as String,
+      providerId: row['provider_id'] as String?,
+      serviceId: row['service_id'] as String?,
+      serviceName: svc is Map<String, dynamic> ? (svc['name'] as String? ?? 'Service') : 'Service',
+      providerName: cust is Map<String, dynamic> ? (cust['full_name'] as String?) : null,
+      status: row['status'] as String,
+      paymentStatus: row['payment_status'] as String,
+      description: row['description'] as String?,
+      scheduledAt: row['scheduled_at'] != null ? DateTime.parse(row['scheduled_at'] as String) : null,
+      estimatedPrice: (row['estimated_price'] as num?),
+      finalPrice: (row['final_price'] as num?),
+      commissionAmount: (row['commission_amount'] as num?),
+      createdAt: DateTime.parse(row['created_at'] as String),
+    );
+  }).toList();
+}
+
+Future<void> updateBookingStatus(String bookingId, String newStatus) async {
+  final user = db.auth.currentUser!;
+  final current = await db.from('bookings').select('status').eq('id', bookingId).single();
+  final oldStatus = (current as Map<String, dynamic>)['status'] as String?;
+  await db.from('bookings').update({'status': newStatus}).eq('id', bookingId);
+  await db.from('booking_status_history').insert({
+    'booking_id': bookingId,
+    'old_status': oldStatus,
+    'new_status': newStatus,
+    'changed_by': user.id,
+  });
+}
+
+Future<Map<String, num>> fetchProviderEarnings() async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return {'earned': 0, 'commission': 0, 'jobs': 0};
+  final providerId = profile['id'] as String;
+  final ledger = await db
+      .from('commission_ledger')
+      .select('provider_amount, commission_amount')
+      .eq('provider_id', providerId);
+  num earned = 0, commission = 0;
+  for (final r in (ledger as List)) {
+    earned += (r as Map<String, dynamic>)['provider_amount'] as num? ?? 0;
+    commission += (r)['commission_amount'] as num? ?? 0;
+  }
+  final completedRows = await db
+      .from('bookings')
+      .select('id')
+      .eq('provider_id', providerId)
+      .eq('status', 'completed');
+  final completed = (completedRows as List).length;
+  return {'earned': earned, 'commission': commission, 'jobs': completed};
+}
+
+Future<List<Map<String, dynamic>>> fetchProviderReviews() async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return [];
+  final providerId = profile['id'] as String;
+  final res = await db
+      .from('reviews')
+      .select('rating, comment, created_at, profiles!reviews_customer_id_fkey(full_name)')
+      .eq('provider_id', providerId)
+      .order('created_at', ascending: false)
+      .limit(20);
+  return (res as List).cast<Map<String, dynamic>>();
+}
+
+Future<List<Map<String, dynamic>>> fetchMyReviews() async {
+  final user = db.auth.currentUser!;
+  final res = await db
+      .from('reviews')
+      .select('rating, comment, created_at, bookings(services(name))')
+      .eq('customer_id', user.id)
+      .order('created_at', ascending: false)
+      .limit(20);
+  return (res as List).cast<Map<String, dynamic>>();
+}
+
+// ---------- FCM device tokens ----------
+
+/// Save (or refresh) this device's FCM push token for the signed-in user.
+/// Upserts on the token so a refreshed token replaces the old row.
+Future<void> saveDeviceToken(String token) async {
+  final user = db.auth.currentUser;
+  if (user == null) return;
+  await db.from('device_tokens').upsert(
+    {
+      'user_id': user.id,
+      'token': token,
+      'platform': 'android',
+    },
+    onConflict: 'token',
+  );
+}
+
+// ---------- In-app chat ----------
+
+/// Fill in a conversation's display fields (service, other party, last
+/// message, unread count) from the booking + profiles + messages.
+Future<Conversation> _enrichConversation(
+  Conversation conv, {
+  required bool iAmCustomer,
+  required String myUserId,
+}) async {
+  var serviceName = 'Service';
+  var otherName = iAmCustomer ? 'Technician' : 'Customer';
+  final booking = await db
+      .from('bookings')
+      .select('id, service_id, customer_id, provider_id, services(name)')
+      .eq('id', conv.bookingId)
+      .maybeSingle() as Map<String, dynamic>?;
+  if (booking != null) {
+    final svc = booking['services'];
+    if (svc is Map<String, dynamic>) {
+      serviceName = (svc['name'] as String?) ?? 'Service';
+    }
+    if (iAmCustomer) {
+      final pid = booking['provider_id'] as String?;
+      if (pid != null) {
+        final pp = await db
+            .from('provider_profiles')
+            .select('user_id')
+            .eq('id', pid)
+            .maybeSingle() as Map<String, dynamic>?;
+        final uid = pp?['user_id'] as String?;
+        if (uid != null) {
+          final prof = await db
+              .from('profiles')
+              .select('full_name')
+              .eq('id', uid)
+              .maybeSingle() as Map<String, dynamic>?;
+          final name = prof?['full_name'] as String?;
+          if (name != null && name.trim().isNotEmpty) otherName = name;
+        }
+      }
+    } else {
+      final cid = booking['customer_id'] as String?;
+      if (cid != null) {
+        final prof = await db
+            .from('profiles')
+            .select('full_name')
+            .eq('id', cid)
+            .maybeSingle() as Map<String, dynamic>?;
+        final name = prof?['full_name'] as String?;
+        if (name != null && name.trim().isNotEmpty) otherName = name;
+      }
+    }
+  }
+  final last = await db
+      .from('messages')
+      .select('message_text, created_at')
+      .eq('conversation_id', conv.id)
+      .order('created_at', ascending: false)
+      .limit(1)
+      .maybeSingle() as Map<String, dynamic>?;
+  final unreadRes = await db
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conv.id)
+      .eq('is_read', false)
+      .neq('sender_id', myUserId);
+  return conv.copyWith(
+    serviceName: serviceName,
+    otherPartyName: otherName,
+    lastMessageText: last?['message_text'] as String?,
+    lastMessageAt: last?['created_at'] != null
+        ? DateTime.parse(last!['created_at'] as String)
+        : null,
+    unreadCount: (unreadRes as List).length,
+  );
+}
+
+/// All conversations for the signed-in user — as a customer (their bookings)
+/// or as a provider (their assigned jobs). Newest first.
+Future<List<Conversation>> fetchMyConversations() async {
+  final user = db.auth.currentUser!;
+  final profile = await currentProfile();
+  final iAmCustomer = profile?.role != 'provider';
+  List<Map<String, dynamic>> rows;
+  if (iAmCustomer) {
+    final res = await db
+        .from('conversations')
+        .select()
+        .eq('customer_id', user.id)
+        .order('created_at', ascending: false);
+    rows = (res as List).cast<Map<String, dynamic>>();
+  } else {
+    final pp = await fetchMyProviderProfile();
+    final providerId = pp?['id'] as String?;
+    if (providerId == null) return [];
+    final res = await db
+        .from('conversations')
+        .select()
+        .eq('provider_id', providerId)
+        .order('created_at', ascending: false);
+    rows = (res as List).cast<Map<String, dynamic>>();
+  }
+  final out = <Conversation>[];
+  for (final row in rows) {
+    out.add(await _enrichConversation(
+      Conversation.fromMap(row),
+      iAmCustomer: iAmCustomer,
+      myUserId: user.id,
+    ));
+  }
+  return out;
+}
+
+/// The chat thread for a booking — returns the existing one, or creates it.
+/// RLS: the customer creates it; the provider can also create it once
+/// migration 003 (conversations_insert_provider) is applied.
+Future<Conversation> getOrCreateConversation(String bookingId) async {
+  final user = db.auth.currentUser!;
+  final profile = await currentProfile();
+  final iAmCustomer = profile?.role != 'provider';
+  final existing = await db
+      .from('conversations')
+      .select()
+      .eq('booking_id', bookingId)
+      .maybeSingle();
+  if (existing != null) {
+    return _enrichConversation(
+      Conversation.fromMap(existing),
+      iAmCustomer: iAmCustomer,
+      myUserId: user.id,
+    );
+  }
+  final booking = await db
+      .from('bookings')
+      .select('id, customer_id, provider_id')
+      .eq('id', bookingId)
+      .single();
+  final providerId = booking['provider_id'] as String?;
+  if (providerId == null) {
+    throw Exception('No technician assigned to this booking yet.');
+  }
+  final inserted = await db
+      .from('conversations')
+      .insert({
+        'booking_id': bookingId,
+        'customer_id': booking['customer_id'],
+        'provider_id': providerId,
+      })
+      .select()
+      .single();
+  return _enrichConversation(
+    Conversation.fromMap(inserted),
+    iAmCustomer: iAmCustomer,
+    myUserId: user.id,
+  );
+}
+
+Future<List<ChatMessage>> fetchMessages(String conversationId) async {
+  final res = await db
+      .from('messages')
+      .select()
+      .eq('conversation_id', conversationId)
+      .order('created_at', ascending: true);
+  return (res as List)
+      .map((m) => ChatMessage.fromMap(m as Map<String, dynamic>))
+      .toList();
+}
+
+Future<ChatMessage> sendMessage(String conversationId, String text) async {
+  final user = db.auth.currentUser!;
+  final row = await db
+      .from('messages')
+      .insert({
+        'conversation_id': conversationId,
+        'sender_id': user.id,
+        'message_text': text.trim(),
+        'is_read': false,
+      })
+      .select()
+      .single();
+  return ChatMessage.fromMap(row);
+}
+
+/// Mark the other party's unread messages in this conversation as read.
+Future<void> markMessagesRead(String conversationId) async {
+  final user = db.auth.currentUser!;
+  await db
+      .from('messages')
+      .update({'is_read': true})
+      .eq('conversation_id', conversationId)
+      .eq('is_read', false)
+      .neq('sender_id', user.id);
+}
+
+/// Live updates for new messages in a conversation (Supabase Realtime).
+/// Returns the channel — the caller must remove it on dispose with
+/// `db.removeChannel(channel)`. Needs the messages table in the
+/// supabase_realtime publication (migration 003).
+RealtimeChannel subscribeToConversationMessages(
+  String conversationId,
+  void Function(ChatMessage) onInsert,
+) {
+  final channel = db.channel('chat-$conversationId');
+  channel.onPostgresChanges(
+    event: PostgresChangeEvent.insert,
+    schema: 'public',
+    table: 'messages',
+    filter: PostgresChangeFilter(
+      type: PostgresChangeFilterType.eq,
+      column: 'conversation_id',
+      value: conversationId,
+    ),
+    callback: (payload) {
+      final row = payload.newRecord;
+      if (row.isEmpty) return;
+      try {
+        onInsert(ChatMessage.fromMap(Map<String, dynamic>.from(row)));
+      } catch (_) {
+        // Ignore malformed realtime payloads; the list refresh covers it.
+      }
+    },
+  );
+  channel.subscribe();
+  return channel;
+}
