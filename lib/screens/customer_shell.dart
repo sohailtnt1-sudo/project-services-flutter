@@ -154,7 +154,11 @@ class _HomeTabState extends State<_HomeTab> {
                     crossAxisCount: 2,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    childAspectRatio: 0.78,
+                    // 0.70 keeps the text area tall enough for a 2-line name
+                    // plus the description on a 360dp-wide phone; 0.78
+                    // overflowed by 12px on "Security & Technology" and
+                    // "Computer Hardware & Software" cards.
+                    childAspectRatio: 0.70,
                   ),
                   itemCount: cats.length,
                   itemBuilder: (context, i) {
@@ -313,7 +317,7 @@ class _CategoryCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(category.description ?? 'Professional home service',
                         style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                   ],
                 ),
