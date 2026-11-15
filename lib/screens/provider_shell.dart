@@ -57,6 +57,8 @@ class _ProviderDashboardTab extends StatefulWidget {
 class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
   late Future<Map<String, dynamic>?> _provider;
   late Future<List<Booking>> _jobs;
+  late Future<ProviderWallet?> _wallet;
+  late Future<List<WalletTransaction>> _transactions;
   bool _toggling = false;
 
   @override
@@ -68,6 +70,8 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
   void _refresh() {
     _provider = fetchMyProviderProfile();
     _jobs = fetchProviderJobs();
+    _wallet = getProviderWallet();
+    _transactions = listWalletTransactions(limit: 5);
   }
 
   Future<void> _toggleAvailability(bool value) async {
@@ -177,6 +181,8 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                _WalletSection(walletFuture: _wallet, transactionsFuture: _transactions),
+                const SizedBox(height: 16),
                 Card(
                   child: SwitchListTile(
                     title: const Text('Available for jobs', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -208,6 +214,148 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
           );
         },
       ),
+    );
+  }
+}
+
+// ---------------- Provider wallet (migration 005) ----------------
+
+class _WalletSection extends StatelessWidget {
+  final Future<ProviderWallet?> walletFuture;
+  final Future<List<WalletTransaction>> transactionsFuture;
+  const _WalletSection({required this.walletFuture, required this.transactionsFuture});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<ProviderWallet?>(
+      future: walletFuture,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
+        if (snap.hasError) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Could not load wallet: ${snap.error}'),
+            ),
+          );
+        }
+        final wallet = snap.data;
+        if (wallet == null) return const SizedBox.shrink();
+        final hasDues = wallet.hasDues;
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.account_balance_wallet, color: AppColors.teal),
+                    const SizedBox(width: 8),
+                    const Text('My wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    Text(
+                      formatRs(wallet.balance),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: hasDues ? AppColors.red : AppColors.teal,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  hasDues
+                      ? '${formatRs(wallet.dues)} dues — clear your dues to keep accepting jobs.'
+                      : 'Prepaid balance. The 15% platform fee is deducted from this wallet when a job completes.',
+                  style: TextStyle(color: hasDues ? AppColors.red : AppColors.inkSoft),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'If your dues go over Rs. ${kWalletDuesLimitRs.toInt()} you cannot accept new jobs until you pay.',
+                  style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.sand,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'To top up: send money via JazzCash / EasyPaisa to the platform account '
+                    '(JazzCash: 03078110561) and share the '
+                    'transaction reference with the admin. The admin verifies it and adds '
+                    'the amount to your wallet.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Recent activity', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                FutureBuilder<List<WalletTransaction>>(
+                  future: transactionsFuture,
+                  builder: (context, tsnap) {
+                    if (tsnap.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(8),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
+                    final list = tsnap.data ?? [];
+                    if (list.isEmpty) {
+                      return const Text('No wallet activity yet.',
+                          style: TextStyle(color: AppColors.inkSoft));
+                    }
+                    return Column(
+                      children: list
+                          .map((t) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(t.kindLabel,
+                                              style: const TextStyle(fontWeight: FontWeight.bold)),
+                                          Text(
+                                            '${t.createdAt.day}/${t.createdAt.month}/${t.createdAt.year}'
+                                            '${t.reference != null ? ' · ${t.reference}' : ''}',
+                                            style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      '${t.isCredit ? '+' : ''}${formatRs(t.amount)}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: t.isCredit ? AppColors.teal : AppColors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ))
+                          .toList(),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -273,12 +421,45 @@ class _JobTileState extends State<_JobTile> {
   Future<void> _setStatus(String status) async {
     setState(() => _busy = true);
     try {
+      // Dues check before Accept: the server enforces this too (the
+      // bookings trigger rejects the update), but checking first gives
+      // the provider a clear explanation instead of an error toast.
+      if (status == 'accepted') {
+        final canAccept = await providerCanAcceptJobs();
+        if (!canAccept) {
+          if (mounted) {
+            await showDialog<void>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Dues need clearing'),
+                content: const Text(
+                  'Your unpaid platform dues are over Rs. 2,000, so you cannot accept new jobs yet. '
+                  'Send the payment via JazzCash / EasyPaisa and share the transaction reference with the admin — '
+                  'once the admin adds it to your wallet, you can accept jobs again.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+          return;
+        }
+      }
       await updateBookingStatus(widget.booking.id, status);
       widget.onChanged();
     } catch (e) {
       if (mounted) {
+        // The database trigger rejects an accept over the dues limit;
+        // show that as a dues message, not a generic error.
+        final msg = e.toString().contains('dues exceed')
+            ? 'Your dues are over Rs. 2,000 — clear them before accepting new jobs.'
+            : 'Could not update job: $e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update job: $e')),
+          SnackBar(content: Text(msg)),
         );
       }
     } finally {

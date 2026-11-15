@@ -6,6 +6,11 @@ import 'config.dart';
 import 'models.dart';
 
 const double kCommissionRate = 0.15;
+
+/// Dues limit for providers (Rs. 2,000). DISPLAY ONLY — the real check is
+/// server-side: public.wallet_dues_limit() + provider_can_accept_jobs()
+/// (migration 005). If the DB limit ever changes, update this to match.
+const num kWalletDuesLimitRs = 2000;
 const String kMediaBucket = 'booking-media';
 
 SupabaseClient get db => Supabase.instance.client;
@@ -385,6 +390,63 @@ Future<Map<String, num>> fetchProviderEarnings() async {
       .eq('status', 'completed');
   final completed = (completedRows as List).length;
   return {'earned': earned, 'commission': commission, 'jobs': completed};
+}
+
+// ---------- Provider wallet (migration 005) ----------
+// The wallet is the provider's prepaid balance. balance >= 0 is credit;
+// balance < 0 is DUES owed to the platform. Commission is deducted
+// server-side by a trigger when a job completes — the client never
+// writes wallet rows; top-ups are recorded by an admin on the website.
+
+/// The signed-in provider's wallet. A zero balance is returned when no
+/// wallet row exists yet (new provider, no transactions so far).
+Future<ProviderWallet?> getProviderWallet() async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return null;
+  final providerId = profile['id'] as String;
+  final res = await db
+      .from('provider_wallets')
+      .select('provider_id, balance, updated_at')
+      .eq('provider_id', providerId)
+      .maybeSingle();
+  if (res == null) {
+    return ProviderWallet(
+      providerId: providerId,
+      balance: 0,
+      updatedAt: DateTime.now(),
+    );
+  }
+  return ProviderWallet.fromMap(res as Map<String, dynamic>);
+}
+
+/// The signed-in provider's wallet ledger, newest first.
+Future<List<WalletTransaction>> listWalletTransactions({int limit = 20}) async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return [];
+  final providerId = profile['id'] as String;
+  final res = await db
+      .from('wallet_transactions')
+      .select('id, provider_id, kind, amount, booking_id, reference, note, created_at')
+      .eq('provider_id', providerId)
+      .order('created_at', ascending: false)
+      .limit(limit);
+  return (res as List)
+      .map((m) => WalletTransaction.fromMap(m as Map<String, dynamic>))
+      .toList();
+}
+
+/// Server-side check (RPC): may this provider accept a new job?
+/// Returns false when their dues are over the Rs. 2,000 limit. The same
+/// check also runs in the database BEFORE UPDATE trigger on bookings,
+/// so the app check is the friendly warning, not the enforcement.
+Future<bool> providerCanAcceptJobs() async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return false;
+  final res = await db.rpc(
+    'provider_can_accept_jobs',
+    params: {'p': profile['id'] as String},
+  );
+  return res as bool? ?? false;
 }
 
 Future<List<Map<String, dynamic>>> fetchProviderReviews() async {

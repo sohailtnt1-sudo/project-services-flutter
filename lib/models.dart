@@ -212,6 +212,71 @@ class ChatMessage {
       );
 }
 
+/// A provider's wallet (migration 005). balance >= 0 is prepaid credit;
+/// balance < 0 is DUES the provider owes the platform (absolute value).
+class ProviderWallet {
+  final String providerId;
+  final num balance;
+  final DateTime updatedAt;
+  ProviderWallet({required this.providerId, required this.balance, required this.updatedAt});
+  factory ProviderWallet.fromMap(Map<String, dynamic> m) => ProviderWallet(
+        providerId: m['provider_id'] as String,
+        balance: (m['balance'] as num?) ?? 0,
+        updatedAt: DateTime.parse(m['updated_at'] as String),
+      );
+  bool get hasDues => balance < 0;
+  num get dues => balance < 0 ? -balance : 0;
+}
+
+/// One row of the wallet ledger (migration 005). Append-only: topup is
+/// money in (positive), commission is the 15% fee (negative), refund /
+/// adjustment are admin-recorded corrections.
+class WalletTransaction {
+  final String id;
+  final String providerId;
+  final String kind; // 'topup' | 'commission' | 'refund' | 'adjustment'
+  final num amount;
+  final String? bookingId;
+  final String? reference;
+  final String? note;
+  final DateTime createdAt;
+  WalletTransaction({
+    required this.id,
+    required this.providerId,
+    required this.kind,
+    required this.amount,
+    this.bookingId,
+    this.reference,
+    this.note,
+    required this.createdAt,
+  });
+  factory WalletTransaction.fromMap(Map<String, dynamic> m) => WalletTransaction(
+        id: m['id'] as String,
+        providerId: m['provider_id'] as String,
+        kind: m['kind'] as String,
+        amount: (m['amount'] as num?) ?? 0,
+        bookingId: m['booking_id'] as String?,
+        reference: m['reference'] as String?,
+        note: m['note'] as String?,
+        createdAt: DateTime.parse(m['created_at'] as String),
+      );
+  bool get isCredit => amount > 0;
+  String get kindLabel {
+    switch (kind) {
+      case 'topup':
+        return 'Top-up';
+      case 'commission':
+        return 'Platform fee (15%)';
+      case 'refund':
+        return 'Refund';
+      case 'adjustment':
+        return 'Adjustment';
+      default:
+        return kind;
+    }
+  }
+}
+
 /// Booking status labels + the ordered timeline used on the tracking screen.
 const bookingStatusLabels = <String, String>{
   'pending': 'Pending',

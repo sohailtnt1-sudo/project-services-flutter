@@ -54,7 +54,7 @@ class NotificationService {
   }
 
   static void _showForegroundMessage(RemoteMessage message) {
-    final title = message.notification?.title ?? 'Project Services';
+    final title = message.notification?.title ?? 'AsaanKaam';
     final body = message.notification?.body ?? '';
     final key = messengerKey;
     if (key?.currentState == null) return;

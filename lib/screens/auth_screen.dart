@@ -93,7 +93,7 @@ class _AuthScreenState extends State<AuthScreen> {
               _logo(),
               const SizedBox(height: 8),
               const Text(
-                'Project Services',
+                'AsaanKaam',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.teal),
               ),
@@ -202,14 +202,14 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _logo() {
     return Center(
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(
-          color: AppColors.teal,
-          borderRadius: BorderRadius.circular(20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Image.asset(
+          'assets/images/logo-asaankaam-3d-worker-tricolor-blue-orange.webp',
+          width: 72,
+          height: 72,
+          fit: BoxFit.cover,
         ),
-        child: const Icon(Icons.build_circle, color: Colors.white, size: 44),
       ),
     );
   }

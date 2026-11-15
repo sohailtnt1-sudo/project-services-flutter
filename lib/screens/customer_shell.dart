@@ -154,7 +154,7 @@ class _HomeTabState extends State<_HomeTab> {
                     crossAxisCount: 2,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    childAspectRatio: 2.1,
+                    childAspectRatio: 0.78,
                   ),
                   itemCount: cats.length,
                   itemBuilder: (context, i) {
@@ -258,6 +258,10 @@ class _HomeTabState extends State<_HomeTab> {
       );
 }
 
+// Category image bundled under assets/images/categories/<slug>.webp.
+// Falls back to the category icon if an image is missing.
+String categoryImagePath(String slug) => 'assets/images/categories/$slug.webp';
+
 class _CategoryCard extends StatelessWidget {
   final Category category;
   const _CategoryCard({required this.category});
@@ -268,24 +272,54 @@ class _CategoryCard extends StatelessWidget {
         builder: (_) => ServicesScreen(category: category),
       )),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(_iconFor(category.slug), color: AppColors.teal),
-              const SizedBox(height: 6),
-              Text(category.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
-              Text(category.description ?? 'Professional home service',
-                  style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ),
+        clipBehavior: Clip.antiAlias,
+        elevation: 2,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Image.asset(
+              categoryImagePath(category.slug),
+              height: 96,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                height: 96,
+                color: AppColors.tealLight,
+                child: Icon(_iconFor(category.slug), color: AppColors.teal, size: 40),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(category.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: AppColors.teal,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: 28,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: AppColors.amber,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(category.description ?? 'Professional home service',
+                        style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -417,6 +451,21 @@ class _CategoriesTabState extends State<_CategoriesTab> {
               final c = cats[i];
               return Card(
                 child: ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.asset(
+                      categoryImagePath(c.slug),
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 56,
+                        height: 56,
+                        color: AppColors.tealLight,
+                        child: const Icon(Icons.build, color: AppColors.teal),
+                      ),
+                    ),
+                  ),
                   title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(c.description ?? ''),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -633,7 +682,7 @@ class _ProfileTabState extends State<_ProfileTab> {
             ),
             const SizedBox(height: 8),
             const Center(
-              child: Text('Project Services v1.0.0 — Cash on delivery',
+              child: Text('AsaanKaam v1.0.0 — Cash on delivery',
                   style: TextStyle(fontSize: 12, color: AppColors.inkSoft)),
             ),
           ],

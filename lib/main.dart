@@ -28,7 +28,7 @@ class ProjectServicesApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Project Services',
+      title: 'AsaanKaam',
       theme: buildTheme(),
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: scaffoldMessengerKey,
