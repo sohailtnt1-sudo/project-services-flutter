@@ -5,6 +5,7 @@ import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
 import 'chat_screen.dart';
+import 'provider_onboarding_screen.dart';
 import 'tracking_screen.dart';
 
 class ProviderShell extends StatefulWidget {
@@ -103,13 +104,31 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
           if (snap.hasError) return Center(child: Text('Could not load profile: ${snap.error}'));
           final p = snap.data;
           if (p == null) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No provider profile yet. Complete your registration on the website '
-                  '(CNIC, services and charges) — then your dashboard appears here.',
-                  textAlign: TextAlign.center,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'No provider profile yet. Complete your verification in the app '
+                      '(CNIC, selfie, services and charges) — then your dashboard appears here.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final done = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => ProviderOnboardingScreen(profile: widget.profile),
+                          ),
+                        );
+                        if (done == true && mounted) setState(_refresh);
+                      },
+                      icon: const Icon(Icons.verified_user),
+                      label: const Text('Complete verification'),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -172,8 +191,24 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                           const Padding(
                             padding: EdgeInsets.only(top: 8),
                             child: Text(
-                              'Your account is under review. You can take jobs once an admin approves your CNIC and documents.',
+                              'Your account is under review. You can take jobs once an admin approves your CNIC, selfie and documents.',
                               style: TextStyle(color: AppColors.inkSoft),
+                            ),
+                          ),
+                        if (status != 'approved')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                final done = await Navigator.of(context).push<bool>(
+                                  MaterialPageRoute(
+                                    builder: (_) => ProviderOnboardingScreen(profile: widget.profile),
+                                  ),
+                                );
+                                if (done == true && mounted) setState(_refresh);
+                              },
+                              icon: const Icon(Icons.verified_user, size: 18),
+                              label: const Text('Complete / update verification'),
                             ),
                           ),
                       ],
@@ -690,9 +725,24 @@ class _ProviderProfileTab extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text(
-              'To update your services, charges, bio or CNIC documents, use the provider registration on the website. '
+              'To update your services, charges, bio, CNIC documents or selfie, use the verification flow in the app. '
               'Your verification status and availability are managed here.',
               style: TextStyle(color: AppColors.inkSoft),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ProviderOnboardingScreen(profile: profile),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.verified_user),
+                label: const Text('Update verification & documents'),
+              ),
             ),
             const SizedBox(height: 24),
             SizedBox(

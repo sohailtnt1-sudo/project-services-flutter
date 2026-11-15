@@ -309,6 +309,175 @@ Future<Map<String, dynamic>?> fetchMyProviderProfile() async {
   return res as Map<String, dynamic>?;
 }
 
+// ---------- Provider onboarding (mirrors the website /provider/onboarding) ----------
+// Step 1: profile form (CNIC number, city, experience, bio, services +
+// own charges). Step 2: CNIC front/back photos + selfie. Everything goes
+// through RLS: a provider manages only their own rows, exactly like the
+// website — no service-role key anywhere.
+
+/// Create or update the provider_profiles row for a user.
+/// Upserts on the UNIQUE(user_id) constraint (website: saveProviderProfile).
+Future<Map<String, dynamic>> saveProviderProfile({
+  required int experienceYears,
+  required String? bio,
+  required String? city,
+}) async {
+  final user = db.auth.currentUser!;
+  final row = await db
+      .from('provider_profiles')
+      .upsert(
+        {
+          'user_id': user.id,
+          'experience_years': experienceYears,
+          'bio': bio,
+          'city': city,
+        },
+        onConflict: 'user_id',
+      )
+      .select('id, user_id, bio, city, experience_years, verification_status, is_available, average_rating')
+      .single();
+  return row as Map<String, dynamic>;
+}
+
+/// One service offered by the provider, with their own charge.
+class ProviderSkillInput {
+  final String serviceId;
+  final num price;
+  final int experienceYears;
+  const ProviderSkillInput({
+    required this.serviceId,
+    required this.price,
+    required this.experienceYears,
+  });
+}
+
+/// Replace a provider's skill set with the given list: skills that are no
+/// longer selected are deleted, the rest are upserted (website:
+/// saveProviderSkills).
+Future<void> saveProviderSkills(String providerId, List<ProviderSkillInput> skills) async {
+  final wanted = skills.map((s) => s.serviceId).toList();
+  var del = db.from('provider_skills').delete().eq('provider_id', providerId);
+  if (wanted.isNotEmpty) {
+    del = del.not('service_id', 'in', '(${wanted.join(',')})');
+  }
+  await del;
+  if (skills.isEmpty) return;
+  await db.from('provider_skills').upsert(
+        skills
+            .map((s) => {
+                  'provider_id': providerId,
+                  'service_id': s.serviceId,
+                  'price': s.price,
+                  'experience_years': s.experienceYears,
+                  'is_active': true,
+                })
+            .toList(),
+        onConflict: 'provider_id,service_id',
+      );
+}
+
+/// All skills (service + own charge) for one provider, oldest first.
+Future<List<Map<String, dynamic>>> fetchProviderSkills(String providerId) async {
+  final res = await db
+      .from('provider_skills')
+      .select('id, provider_id, service_id, experience_years, price, is_active')
+      .eq('provider_id', providerId)
+      .order('created_at', ascending: true);
+  return (res as List).cast<Map<String, dynamic>>();
+}
+
+/// All verification documents for one provider (owner / admin only, RLS).
+Future<List<ProviderDocument>> fetchProviderDocuments(String providerId) async {
+  final res = await db
+      .from('provider_documents')
+      .select('id, provider_id, document_type, document_url, document_number, verification_status, created_at')
+      .eq('provider_id', providerId)
+      .order('created_at', ascending: true);
+  return (res as List)
+      .map((m) => ProviderDocument.fromMap(m as Map<String, dynamic>))
+      .toList();
+}
+
+/// Create or update one document row for a provider (keyed by
+/// provider_id + document_type, e.g. 'cnic_front' / 'cnic_back' /
+/// 'selfie'). There is no UNIQUE constraint on that pair, so this reads
+/// first and then updates or inserts (website: upsertProviderDocument).
+Future<ProviderDocument> upsertProviderDocument(
+  String providerId,
+  String documentType, {
+  String? documentUrl,
+  String? documentNumber,
+}) async {
+  final existing = await db
+      .from('provider_documents')
+      .select('id')
+      .eq('provider_id', providerId)
+      .eq('document_type', documentType)
+      .maybeSingle() as Map<String, dynamic>?;
+  final patch = <String, dynamic>{
+    if (documentUrl != null) 'document_url': documentUrl,
+    if (documentNumber != null) 'document_number': documentNumber,
+  };
+  if (existing != null) {
+    final row = await db
+        .from('provider_documents')
+        .update(patch)
+        .eq('id', existing['id'] as String)
+        .select('id, provider_id, document_type, document_url, document_number, verification_status, created_at')
+        .single();
+    return ProviderDocument.fromMap(row as Map<String, dynamic>);
+  }
+  final row = await db
+      .from('provider_documents')
+      .insert({
+        'provider_id': providerId,
+        'document_type': documentType,
+        'verification_status': 'pending',
+        ...patch,
+      })
+      .select('id, provider_id, document_type, document_url, document_number, verification_status, created_at')
+      .single();
+  return ProviderDocument.fromMap(row as Map<String, dynamic>);
+}
+
+String? validateDocumentFile(File file) {
+  final size = file.lengthSync();
+  if (size == 0) return 'The photo is empty.';
+  if (size > 10 * 1024 * 1024) {
+    return 'The photo is over 10 MB — please pick a smaller photo.';
+  }
+  return null;
+}
+
+/// Upload one verification photo (CNIC front/back or selfie) to the
+/// booking-media bucket under {user_id}/provider-docs/… — the same bucket
+/// and path convention as the website — and point the matching document
+/// row at it. A failed upload never creates a document row.
+Future<ProviderDocument> uploadProviderDocument(
+  String providerId,
+  String documentType,
+  File file, {
+  String? documentNumber,
+}) async {
+  final problem = validateDocumentFile(file);
+  if (problem != null) throw Exception(problem);
+  final user = db.auth.currentUser!;
+  final name = file.path.split('/').last.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+  final path = '${user.id}/provider-docs/${DateTime.now().millisecondsSinceEpoch}-$name';
+  await db.storage.from(kMediaBucket).upload(
+        path,
+        file,
+        fileOptions: const FileOptions(upsert: false),
+      );
+  final url = '${AppConfig.supabaseUrl}/storage/v1/object/public/$kMediaBucket/$path';
+  return upsertProviderDocument(
+    providerId,
+    documentType,
+    documentUrl: url,
+    documentNumber: documentNumber,
+  );
+}
+
 Future<void> setAvailability(bool online) async {
   final profile = await fetchMyProviderProfile();
   if (profile == null) return;

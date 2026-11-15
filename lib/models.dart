@@ -277,6 +277,45 @@ class WalletTransaction {
   }
 }
 
+/// A provider verification document (migration 001/002).
+/// document_type is free text — 'cnic_front', 'cnic_back' or 'selfie'.
+/// The CNIC *number* lives on the cnic_front row (document_number),
+/// never on provider_profiles (those rows are publicly readable).
+class ProviderDocument {
+  final String id;
+  final String providerId;
+  final String? documentType;
+  final String? documentUrl;
+  final String? documentNumber;
+  final String verificationStatus;
+  final DateTime createdAt;
+  ProviderDocument({
+    required this.id,
+    required this.providerId,
+    this.documentType,
+    this.documentUrl,
+    this.documentNumber,
+    required this.verificationStatus,
+    required this.createdAt,
+  });
+  factory ProviderDocument.fromMap(Map<String, dynamic> m) => ProviderDocument(
+        id: m['id'] as String,
+        providerId: m['provider_id'] as String,
+        documentType: m['document_type'] as String?,
+        documentUrl: m['document_url'] as String?,
+        documentNumber: m['document_number'] as String?,
+        verificationStatus: (m['verification_status'] as String?) ?? 'pending',
+        createdAt: DateTime.parse(m['created_at'] as String),
+      );
+  bool get isSelfie => documentType == 'selfie';
+}
+
+/// Pakistani CNIC: 13 digits, usually written 35202-1234567-1.
+/// Mirrors the website (src/lib/provider.ts).
+String normalizeCnic(String raw) => raw.replaceAll(RegExp(r'\D'), '');
+
+bool isValidCnic(String raw) => normalizeCnic(raw).length == 13;
+
 /// Booking status labels + the ordered timeline used on the tracking screen.
 const bookingStatusLabels = <String, String>{
   'pending': 'Pending',
