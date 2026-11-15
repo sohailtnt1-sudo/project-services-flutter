@@ -8,7 +8,8 @@ import 'booking_screen.dart';
 
 class ProvidersScreen extends StatefulWidget {
   final ServiceItem service;
-  const ProvidersScreen({super.key, required this.service});
+  final String city;
+  const ProvidersScreen({super.key, required this.service, this.city = kDefaultCity});
   @override
   State<ProvidersScreen> createState() => _ProvidersScreenState();
 }
@@ -18,7 +19,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   @override
   void initState() {
     super.initState();
-    _providers = fetchProvidersForService(widget.service.id);
+    _providers = fetchProvidersForService(widget.service.id, city: widget.city);
   }
 
   @override
@@ -40,6 +41,15 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                 const SizedBox(height: 6),
                 Text('Base price: ${formatRs(s.basePrice)}  ·  Platform fee 15% is shown before you confirm.',
                     style: const TextStyle(fontSize: 13, color: AppColors.inkSoft)),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.location_on, size: 14, color: AppColors.teal),
+                    const SizedBox(width: 2),
+                    Text('Showing providers in ${widget.city}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.teal)),
+                  ],
+                ),
               ],
             ),
           ),
@@ -55,11 +65,11 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                 }
                 final list = snap.data ?? [];
                 if (list.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Padding(
-                      padding: EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(24),
                       child: Text(
-                        'No verified technician offers this service yet. '
+                        'No providers in ${widget.city} for this service yet. '
                         'You can still book — an available technician will be assigned.',
                         textAlign: TextAlign.center,
                       ),

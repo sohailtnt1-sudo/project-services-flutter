@@ -51,6 +51,39 @@ Future<void> ensureProfile({
   });
 }
 
+/// Cities the app serves — same 6 as the website header selector.
+const List<String> kServiceCities = [
+  'Lahore',
+  'Karachi',
+  'Islamabad',
+  'Rawalpindi',
+  'Faisalabad',
+  'Quetta',
+];
+
+/// Default city when the customer has not picked one yet.
+const String kDefaultCity = 'Lahore';
+
+String _normalizeCity(String? city) => (city ?? '').trim().toLowerCase();
+
+/// True when a provider serves [city]: an exact (case-insensitive) match,
+/// or the provider has no city set (treated as available everywhere, so
+/// no existing provider ever vanishes from the list).
+bool providerMatchesCity(String? providerCity, String? city) {
+  final wanted = _normalizeCity(city);
+  if (wanted.isEmpty) return true;
+  final have = _normalizeCity(providerCity);
+  if (have.isEmpty) return true;
+  return have == wanted;
+}
+
+/// Filter a provider list to one city (case-insensitive; providers with
+/// no city set are kept). Pure — unit-tested in test/city_filter_test.dart.
+List<Provider> filterProvidersByCity(List<Provider> providers, String? city) {
+  if (_normalizeCity(city).isEmpty) return List<Provider>.of(providers);
+  return providers.where((p) => providerMatchesCity(p.city, city)).toList();
+}
+
 // ---------- Catalog (live) ----------
 
 Future<List<Category>> fetchCategories() async {
@@ -96,7 +129,9 @@ Future<List<ServiceItem>> fetchAllServices() async {
 
 /// Approved providers who offer [serviceId], with their own charge.
 /// Falls back to every approved provider when a service has no skill rows yet.
-Future<List<Provider>> fetchProvidersForService(String serviceId) async {
+/// When [city] is given, only providers in that city are returned
+/// (case-insensitive; providers with no city set are always included).
+Future<List<Provider>> fetchProvidersForService(String serviceId, {String? city}) async {
   final skills = await db
       .from('provider_skills')
       .select('provider_id, price, service_id')
@@ -140,16 +175,18 @@ Future<List<Provider>> fetchProvidersForService(String serviceId) async {
       price: priceByProvider[r['id'] as String],
     ));
   }
-  return providers;
+  return filterProvidersByCity(providers, city);
 }
 
-Future<List<Provider>> fetchApprovedProviders({int limit = 6}) async {
+Future<List<Provider>> fetchApprovedProviders({int limit = 6, String? city}) async {
+  // Fetch generously, then filter by city and take [limit]: applying the
+  // DB limit first could drop every provider in the selected city.
   final profiles = await db
       .from('provider_profiles')
       .select('id, user_id, bio, city, experience_years, verification_status, is_available, average_rating')
       .eq('verification_status', 'approved')
       .order('average_rating', ascending: false)
-      .limit(limit);
+      .limit(50);
   final providers = <Provider>[];
   for (final r in (profiles as List).cast<Map<String, dynamic>>()) {
     final userId = r['user_id'] as String;
@@ -174,7 +211,8 @@ Future<List<Provider>> fetchApprovedProviders({int limit = 6}) async {
       averageRating: (r['average_rating'] as num?) ?? 0,
     ));
   }
-  return providers;
+  final filtered = filterProvidersByCity(providers, city);
+  return filtered.length > limit ? filtered.sublist(0, limit) : filtered;
 }
 
 // ---------- Bookings ----------

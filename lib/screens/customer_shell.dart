@@ -20,12 +20,20 @@ class CustomerShell extends StatefulWidget {
 
 class _CustomerShellState extends State<CustomerShell> {
   int _tab = 0;
+  // The customer's city for this session (default Lahore). It filters
+  // every provider list in the app; kept in memory only, no new
+  // dependency (shared_preferences is not in pubspec.yaml).
+  String _selectedCity = kDefaultCity;
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      _HomeTab(profile: widget.profile),
-      const _CategoriesTab(),
+      _HomeTab(
+        profile: widget.profile,
+        city: _selectedCity,
+        onCityChanged: (c) => setState(() => _selectedCity = c),
+      ),
+      _CategoriesTab(city: _selectedCity),
       const _MyBookingsTab(),
       const ConversationsScreen(),
       _ProfileTab(profile: widget.profile),
@@ -54,7 +62,9 @@ class _CustomerShellState extends State<CustomerShell> {
 
 class _HomeTab extends StatefulWidget {
   final Profile profile;
-  const _HomeTab({required this.profile});
+  final String city;
+  final ValueChanged<String> onCityChanged;
+  const _HomeTab({required this.profile, required this.city, required this.onCityChanged});
   @override
   State<_HomeTab> createState() => _HomeTabState();
 }
@@ -68,7 +78,15 @@ class _HomeTabState extends State<_HomeTab> {
   void initState() {
     super.initState();
     _cats = fetchCategories();
-    _providers = fetchApprovedProviders();
+    _providers = fetchApprovedProviders(city: widget.city);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.city != widget.city) {
+      _providers = fetchApprovedProviders(city: widget.city);
+    }
   }
 
   @override
@@ -104,11 +122,29 @@ class _HomeTabState extends State<_HomeTab> {
                     children: [
                       Text('Hello, $name',
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.teal)),
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.location_on, size: 14, color: AppColors.inkSoft),
-                          SizedBox(width: 2),
-                          Text('Lahore, Pakistan', style: TextStyle(color: AppColors.inkSoft, fontSize: 13)),
+                          const Icon(Icons.location_on, size: 14, color: AppColors.inkSoft),
+                          const SizedBox(width: 2),
+                          Text('${widget.city}, Pakistan', style: const TextStyle(color: AppColors.inkSoft, fontSize: 13)),
+                          const SizedBox(width: 4),
+                          // City picker: filters every provider list in the
+                          // app (home, categories, search) to this city.
+                          DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: widget.city,
+                              isDense: true,
+                              icon: const Icon(Icons.arrow_drop_down, size: 18, color: AppColors.teal),
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.teal),
+                              items: kServiceCities
+                                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                                  .toList(),
+                              onChanged: (c) {
+                                if (c != null) widget.onCityChanged(c);
+                              },
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -163,7 +199,7 @@ class _HomeTabState extends State<_HomeTab> {
                   itemCount: cats.length,
                   itemBuilder: (context, i) {
                     final c = cats[i];
-                    return _CategoryCard(category: c);
+                    return _CategoryCard(category: c, city: widget.city);
                   },
                 );
               },
@@ -198,11 +234,11 @@ class _HomeTabState extends State<_HomeTab> {
                 ),
               ),
             ),
-            const Text('OpenStreetMap — technicians serve Lahore and nearby areas.',
-                style: TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+            Text('OpenStreetMap — technicians serve ${widget.city} and nearby areas.',
+                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
             const SizedBox(height: 20),
-            const Text('Recommended technicians',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Recommended technicians in ${widget.city}',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             FutureBuilder<List<Provider>>(
               future: _providers,
@@ -218,11 +254,11 @@ class _HomeTabState extends State<_HomeTab> {
                 }
                 final list = snap.data ?? [];
                 if (list.isEmpty) {
-                  return const Card(
+                  return Card(
                     child: Padding(
-                      padding: EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16),
                       child: Text(
-                          'No verified technicians yet. Technicians appear here once an admin approves them.'),
+                          'No verified technicians in ${widget.city} yet. Technicians appear here once an admin approves them.'),
                     ),
                   );
                 }
@@ -248,7 +284,7 @@ class _HomeTabState extends State<_HomeTab> {
     final results = await searchServices(q);
     if (!mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _SearchResultsScreen(query: q, results: results),
+      builder: (_) => _SearchResultsScreen(query: q, results: results, city: widget.city),
     ));
   }
 
@@ -268,12 +304,13 @@ String categoryImagePath(String slug) => 'assets/images/categories/$slug.webp';
 
 class _CategoryCard extends StatelessWidget {
   final Category category;
-  const _CategoryCard({required this.category});
+  final String city;
+  const _CategoryCard({required this.category, this.city = kDefaultCity});
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ServicesScreen(category: category),
+        builder: (_) => ServicesScreen(category: category, city: city),
       )),
       child: Card(
         clipBehavior: Clip.antiAlias,
@@ -388,7 +425,8 @@ class _ProviderTile extends StatelessWidget {
 class _SearchResultsScreen extends StatelessWidget {
   final String query;
   final List<ServiceItem> results;
-  const _SearchResultsScreen({required this.query, required this.results});
+  final String city;
+  const _SearchResultsScreen({required this.query, required this.results, this.city = kDefaultCity});
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -409,7 +447,7 @@ class _SearchResultsScreen extends StatelessWidget {
                     onTap: () {
                       // Open the service's providers list.
                       Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => ProvidersScreen(service: s),
+                        builder: (_) => ProvidersScreen(service: s, city: city),
                       ));
                     },
                   ),
@@ -423,7 +461,8 @@ class _SearchResultsScreen extends StatelessWidget {
 // ---------------- Categories tab ----------------
 
 class _CategoriesTab extends StatefulWidget {
-  const _CategoriesTab();
+  final String city;
+  const _CategoriesTab({this.city = kDefaultCity});
   @override
   State<_CategoriesTab> createState() => _CategoriesTabState();
 }
@@ -474,7 +513,7 @@ class _CategoriesTabState extends State<_CategoriesTab> {
                   subtitle: Text(c.description ?? ''),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ServicesScreen(category: c),
+                    builder: (_) => ServicesScreen(category: c, city: widget.city),
                   )),
                 ),
               );

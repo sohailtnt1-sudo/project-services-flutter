@@ -11,7 +11,8 @@ String serviceImagePath(String slug) => 'assets/images/services/$slug.webp';
 
 class ServicesScreen extends StatefulWidget {
   final Category category;
-  const ServicesScreen({super.key, required this.category});
+  final String city;
+  const ServicesScreen({super.key, required this.category, this.city = kDefaultCity});
   @override
   State<ServicesScreen> createState() => _ServicesScreenState();
 }
@@ -70,7 +71,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   trailing: Text(formatRs(s.basePrice),
                       style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.teal)),
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ProvidersScreen(service: s),
+                    builder: (_) => ProvidersScreen(service: s, city: widget.city),
                   )),
                 ),
               );
