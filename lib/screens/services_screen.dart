@@ -5,6 +5,10 @@ import '../repository.dart';
 import '../theme.dart';
 import 'providers_screen.dart';
 
+// Service photo bundled under assets/images/services/<slug>.webp.
+// Falls back to the service's category image, then to an icon.
+String serviceImagePath(String slug) => 'assets/images/services/$slug.webp';
+
 class ServicesScreen extends StatefulWidget {
   final Category category;
   const ServicesScreen({super.key, required this.category});
@@ -40,6 +44,27 @@ class _ServicesScreenState extends State<ServicesScreen> {
               final s = list[i];
               return Card(
                 child: ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.asset(
+                      serviceImagePath(s.slug),
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Image.asset(
+                        'assets/images/categories/${widget.category.slug}.webp',
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 56,
+                          height: 56,
+                          color: AppColors.tealLight,
+                          child: const Icon(Icons.build, color: AppColors.teal),
+                        ),
+                      ),
+                    ),
+                  ),
                   title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(s.description ?? ''),
                   trailing: Text(formatRs(s.basePrice),
