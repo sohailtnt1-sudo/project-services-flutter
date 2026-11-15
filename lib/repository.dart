@@ -357,16 +357,12 @@ Future<List<Booking>> fetchProviderJobs() async {
 }
 
 Future<void> updateBookingStatus(String bookingId, String newStatus) async {
-  final user = db.auth.currentUser!;
-  final current = await db.from('bookings').select('status').eq('id', bookingId).single();
-  final oldStatus = (current as Map<String, dynamic>)['status'] as String?;
   await db.from('bookings').update({'status': newStatus}).eq('id', bookingId);
-  await db.from('booking_status_history').insert({
-    'booking_id': bookingId,
-    'old_status': oldStatus,
-    'new_status': newStatus,
-    'changed_by': user.id,
-  });
+  // NOTE: do NOT insert into booking_status_history here. The database
+  // trigger log_booking_status_change() (SECURITY DEFINER) writes the
+  // history row automatically on every status change, and there is no
+  // direct INSERT policy for clients on that table — a direct insert
+  // fails with RLS 42501 ("new row violates row-level security policy").
 }
 
 Future<Map<String, num>> fetchProviderEarnings() async {
