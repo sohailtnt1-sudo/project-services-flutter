@@ -5,7 +5,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models.dart';
 import '../repository.dart';
+import '../services/location_service.dart';
 import '../theme.dart';
+import 'booking_screen.dart';
 import 'chat_screen.dart';
 import 'services_screen.dart';
 import 'providers_screen.dart';
@@ -74,11 +76,27 @@ class _HomeTabState extends State<_HomeTab> {
   late Future<List<Provider>> _providers;
   final _search = TextEditingController();
 
+  // ---- Phase B: interactive map state ----
+  final _mapController = MapController();
+  // Map centre: GPS position when known, else the selected city's centre.
+  LatLng _mapCenter = const LatLng(31.5204, 74.3587); // Lahore
+  LatLng? _myLocation;
+  bool _mapReady = false;
+  double _radiusKm = 10;
+  List<Provider> _mapProviders = [];
+  List<ProviderLocation> _locations = [];
+  String? _mapError;
+
+  static const List<double> _radiusOptions = [5, 10, 25];
+
   @override
   void initState() {
     super.initState();
     _cats = fetchCategories();
     _providers = fetchApprovedProviders(city: widget.city);
+    _mapCenter = kCityCenters[widget.city] ?? _mapCenter;
+    _loadMapData();
+    _locateMe(initial: true);
   }
 
   @override
@@ -86,13 +104,81 @@ class _HomeTabState extends State<_HomeTab> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.city != widget.city) {
       _providers = fetchApprovedProviders(city: widget.city);
+      // New city: re-centre on its centre and re-fetch map data.
+      _mapCenter = kCityCenters[widget.city] ?? const LatLng(31.5204, 74.3587);
+      if (_mapReady) _mapController.move(_mapCenter, 12);
+      _loadMapData();
     }
   }
 
   @override
   void dispose() {
     _search.dispose();
+    _mapController.dispose();
     super.dispose();
+  }
+
+  /// Providers + their live locations for the map markers. The map join
+  /// uses a wider provider fetch (limit 50) than the "Recommended"
+  /// list below (limit 6) so markers are not capped by the list size.
+  /// Providers with no location get no marker but still appear in the
+  /// list below the map.
+  Future<void> _loadMapData() async {
+    try {
+      final results = await Future.wait([
+        fetchApprovedProviders(city: widget.city, limit: 50),
+        fetchProviderLocations(city: widget.city),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _mapProviders = results[0] as List<Provider>;
+        _locations = results[1] as List<ProviderLocation>;
+        _mapError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _mapError = 'Could not load technician locations: $e');
+    }
+  }
+
+  /// Centre the map on the device's GPS position. Never throws and
+  /// never crashes when permission is denied — the city centre stays.
+  Future<void> _locateMe({bool initial = false}) async {
+    final pos = await getCurrentPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      if (!initial) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Location permission nahi mili — city centre dikhaya ja raha hai'),
+          ),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _myLocation = pos;
+      _mapCenter = pos;
+    });
+    if (_mapReady) _mapController.move(pos, 13);
+  }
+
+  /// Providers with a live location, within the selected radius of the
+  /// map centre. Joined on Provider.id == ProviderLocation.providerId.
+  List<({Provider provider, ProviderLocation location})> get _visibleMarkers {
+    final byId = {for (final p in _mapProviders) p.id: p};
+    final out = <({Provider provider, ProviderLocation location})>[];
+    for (final loc in _locations) {
+      final p = byId[loc.providerId];
+      if (p == null) continue;
+      if (!isWithinRadiusKm(
+          _mapCenter, LatLng(loc.latitude, loc.longitude), _radiusKm)) {
+        continue;
+      }
+      out.add((provider: p, location: loc));
+    }
+    return out;
   }
 
   @override
@@ -211,29 +297,125 @@ class _HomeTabState extends State<_HomeTab> {
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: SizedBox(
-                height: 180,
-                child: FlutterMap(
-                  options: const MapOptions(
-                    initialCenter: LatLng(31.5204, 74.3587), // Lahore
-                    initialZoom: 11,
-                  ),
+                height: 300,
+                child: Stack(
                   children: [
-                    TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.projectservices.app',
-                    ),
-                    const MarkerLayer(markers: [
-                      Marker(
-                        point: LatLng(31.5204, 74.3587),
-                        width: 40,
-                        height: 40,
-                        child: Icon(Icons.location_on, color: AppColors.teal, size: 36),
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _mapCenter,
+                        initialZoom: 12,
+                        onMapReady: () {
+                          _mapReady = true;
+                          _mapController.move(_mapCenter, 12);
+                        },
                       ),
-                    ]),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.projectservices.app',
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            // My own position (blue dot), when known.
+                            if (_myLocation != null)
+                              Marker(
+                                point: _myLocation!,
+                                width: 24,
+                                height: 24,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: Colors.white, width: 2),
+                                  ),
+                                ),
+                              ),
+                            // One teal wrench marker per provider with a
+                            // live location inside the radius.
+                            for (final m in _visibleMarkers)
+                              Marker(
+                                point: LatLng(
+                                    m.location.latitude, m.location.longitude),
+                                width: 44,
+                                height: 44,
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      _showProviderSheet(m.provider),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.teal,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.white, width: 2),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 4,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(Icons.build,
+                                        color: Colors.white, size: 22),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Material(
+                        color: Colors.white,
+                        shape: const CircleBorder(),
+                        elevation: 2,
+                        child: IconButton(
+                          icon: const Icon(Icons.my_location,
+                              color: AppColors.teal),
+                          tooltip: 'My location',
+                          onPressed: () => _locateMe(),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('Within: ',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final r in _radiusOptions)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text('${r.toInt()} km'),
+                      selected: _radiusKm == r,
+                      selectedColor: AppColors.tealLight,
+                      onSelected: (selected) {
+                        if (selected) setState(() => _radiusKm = r);
+                      },
+                    ),
+                  ),
+                const Spacer(),
+                Text(
+                  '${_visibleMarkers.length} technicians within ${_radiusKm.toInt()} km',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.inkSoft),
+                ),
+              ],
+            ),
+            if (_mapError != null) ...[
+              const SizedBox(height: 6),
+              Text(_mapError!,
+                  style: const TextStyle(fontSize: 12, color: AppColors.red)),
+            ],
             Text('OpenStreetMap — technicians serve ${widget.city} and nearby areas.',
                 style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
             const SizedBox(height: 20),
@@ -273,6 +455,157 @@ class _HomeTabState extends State<_HomeTab> {
               style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Bottom sheet for a tapped map marker: provider details + a Book
+  /// button that opens a service picker (the Home tab has no service
+  /// context, so the customer picks the service here, then lands on
+  /// BookingScreen with that provider pre-selected).
+  void _showProviderSheet(Provider p) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppColors.tealLight,
+                  child: Text(
+                    p.name.isNotEmpty ? p.name[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                        color: AppColors.teal, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(p.name,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                Chip(
+                  label: Text(p.isAvailable ? 'Online' : 'Offline',
+                      style: const TextStyle(fontSize: 12)),
+                  backgroundColor:
+                      p.isAvailable ? AppColors.tealLight : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '${p.experienceYears} yrs experience'
+              '${p.city != null ? ' · ${p.city}' : ''}'
+              '${p.averageRating > 0 ? ' · ★ ${p.averageRating}' : ''}',
+              style: const TextStyle(color: AppColors.inkSoft),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              p.price != null
+                  ? 'Charges: ${formatRs(p.price!)}'
+                  : 'Charges on booking',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            if (p.bio != null && p.bio!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(p.bio!, maxLines: 3, overflow: TextOverflow.ellipsis),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(sheetContext).pop();
+                  _showServicePicker(p);
+                },
+                icon: const Icon(Icons.calendar_month),
+                label: const Text('Book'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showServicePicker(Provider p) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Book ${p.name} for',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              Flexible(
+                child: FutureBuilder<List<ServiceItem>>(
+                  future: fetchAllServices(),
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                          child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(),
+                      ));
+                    }
+                    if (snap.hasError) {
+                      return Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          'Could not load services: ${snap.error}',
+                          style: const TextStyle(color: AppColors.red),
+                        ),
+                      );
+                    }
+                    final services = snap.data ?? [];
+                    if (services.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text('No services available yet.'),
+                      );
+                    }
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: services.length,
+                      itemBuilder: (context, i) {
+                        final s = services[i];
+                        return ListTile(
+                          title: Text(s.name,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(s.description ?? ''),
+                          trailing: Text(formatRs(s.basePrice),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.teal)),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => BookingScreen(
+                                service: s,
+                                provider: p,
+                                price: p.price ?? s.basePrice,
+                              ),
+                            ));
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

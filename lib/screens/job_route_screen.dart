@@ -1,0 +1,494 @@
+// Job route screen (Phase C) — provider side.
+// Shows the route from the provider's current position to the customer's
+// job address, and lets the provider share their live location with the
+// customer while the job is active.
+//
+// Privacy: live location is published ONLY while this job is active
+// (accepted / confirmed / on_the_way / in_progress). Sharing stops and
+// the location row is deleted on dispose and when the job reaches a
+// terminal status (handled in _JobTile._setStatus as well).
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../models.dart';
+import '../repository.dart';
+import '../services/location_service.dart';
+import '../services/map_api.dart';
+import '../theme.dart';
+
+/// Statuses in which a job is active and live location may be shared.
+const Set<String> kActiveJobStatuses = {
+  'accepted',
+  'confirmed',
+  'on_the_way',
+  'in_progress',
+};
+
+/// Pure route-resolution helper (unit-tested in test/route_fallback_test.dart):
+/// a real OSRM route wins; when fetchRoute returned null (or the route has
+/// no points) the caller draws a straight line between the two points
+/// instead and shows the fallback note.
+({List<LatLng> points, bool isFallback}) resolveRoutePoints({
+  required RouteResult? route,
+  required LatLng from,
+  required LatLng to,
+}) {
+  if (route != null && route.points.isNotEmpty) {
+    return (points: route.points, isFallback: false);
+  }
+  return (points: [from, to], isFallback: true);
+}
+
+class JobRouteScreen extends StatefulWidget {
+  final Booking booking;
+  const JobRouteScreen({super.key, required this.booking});
+  @override
+  State<JobRouteScreen> createState() => _JobRouteScreenState();
+}
+
+class _JobRouteScreenState extends State<JobRouteScreen> {
+  final MapController _mapController = MapController();
+  final MapApi _mapApi = MapApi();
+
+  ServiceAddress? _address;
+  LatLng? _myPos;
+  RouteResult? _route;
+  bool _routeFallback = false;
+  bool _loading = true;
+  String? _loadError;
+
+  bool _sharing = false;
+  bool _permissionOk = true;
+  DateTime? _lastSharedAt;
+  DateTime? _lastUploadAt;
+  DateTime? _lastRouteAt;
+  StreamSubscription<LatLng>? _posSub;
+
+  bool get _jobActive => kActiveJobStatuses.contains(widget.booking.status);
+
+  bool get _hasDestinationCoords =>
+      _address != null && _address!.latitude != null && _address!.longitude != null;
+
+  LatLng? get _destination =>
+      _hasDestinationCoords ? LatLng(_address!.latitude!, _address!.longitude!) : null;
+
+  LatLng get _initialCenter =>
+      _myPos ?? _destination ?? kCityCenters['Lahore']!;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final address = await fetchBookingAddress(widget.booking.id);
+      var myPos = await getCurrentPosition();
+      myPos ??= _fallbackCenter(address?.city);
+      if (!mounted) return;
+      setState(() {
+        _address = address;
+        _myPos = myPos;
+        _loading = false;
+      });
+      await _fetchRoute();
+      // Auto-start sharing once on the way / work started.
+      if (mounted &&
+          (widget.booking.status == 'on_the_way' ||
+              widget.booking.status == 'in_progress')) {
+        await _startSharing();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  /// City-centre fallback when the device position is unavailable:
+  /// the address city (case-insensitive), else Lahore.
+  LatLng _fallbackCenter(String? city) {
+    final wanted = (city ?? '').trim().toLowerCase();
+    for (final entry in kCityCenters.entries) {
+      if (entry.key.toLowerCase() == wanted) return entry.value;
+    }
+    return kCityCenters['Lahore']!;
+  }
+
+  /// Fetch the OSRM route provider → destination. On failure the last
+  /// good route is kept during a refresh; on first load the straight
+  /// line fallback is used instead.
+  Future<void> _fetchRoute({bool isRefresh = false}) async {
+    final from = _myPos;
+    final to = _destination;
+    if (from == null || to == null) {
+      if (mounted) setState(() => _routeFallback = true);
+      return;
+    }
+    final route = await _mapApi.fetchRoute(from, to);
+    if (!mounted) return;
+    setState(() {
+      _lastRouteAt = DateTime.now();
+      if (route != null) {
+        _route = route;
+        _routeFallback = false;
+      } else if (!isRefresh || _route == null) {
+        // First load (or no good route yet): straight-line fallback.
+        _routeFallback = true;
+      }
+      // Refresh failure with a good route already shown: keep it.
+    });
+  }
+
+  Future<void> _startSharing() async {
+    if (_sharing || !_jobActive) return;
+    final available = await isLocationSharingAvailable();
+    if (!mounted) return;
+    if (!available) {
+      setState(() => _permissionOk = false);
+      return;
+    }
+    setState(() {
+      _sharing = true;
+      _permissionOk = true;
+    });
+    _posSub = positionStream(distanceFilterMeters: 10).listen((pos) async {
+      if (!mounted) return;
+      setState(() => _myPos = pos);
+      // Re-fetch the route at most once per 60 seconds while sharing.
+      final lastRoute = _lastRouteAt;
+      if (lastRoute == null ||
+          DateTime.now().difference(lastRoute).inSeconds >= 60) {
+        await _fetchRoute(isRefresh: true);
+      }
+      // Upload at most once per 10 seconds.
+      final lastUpload = _lastUploadAt;
+      if (lastUpload != null &&
+          DateTime.now().difference(lastUpload).inSeconds < 10) {
+        return;
+      }
+      _lastUploadAt = DateTime.now();
+      try {
+        await upsertMyProviderLocation(
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+        );
+        if (mounted) setState(() => _lastSharedAt = DateTime.now());
+      } catch (_) {
+        // Best-effort: a failed upload must not stop sharing or crash.
+      }
+    });
+    // Publish the current position immediately so the customer sees the
+    // provider without waiting for the first 10 m movement.
+    final now = _myPos;
+    if (now != null) {
+      _lastUploadAt = DateTime.now();
+      try {
+        await upsertMyProviderLocation(
+          latitude: now.latitude,
+          longitude: now.longitude,
+        );
+        if (mounted) setState(() => _lastSharedAt = DateTime.now());
+      } catch (_) {
+        // Best-effort.
+      }
+    }
+  }
+
+  /// Stop the position stream and delete the live-location row.
+  /// Never throws; safe to call from dispose.
+  Future<void> _stopSharing() async {
+    await _posSub?.cancel();
+    _posSub = null;
+    if (_sharing) {
+      setState(() => _sharing = false);
+    }
+    try {
+      await clearMyProviderLocation();
+    } catch (_) {
+      // clearMyProviderLocation is already best-effort; ignore.
+    }
+  }
+
+  @override
+  void dispose() {
+    // Fire-and-forget: the location row must be removed when the
+    // provider leaves this screen, even mid-job.
+    unawaited(_stopSharing());
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  String _timeLabel(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}:'
+      '${t.second.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final b = widget.booking;
+    final resolved = (_myPos != null && _destination != null)
+        ? resolveRoutePoints(route: _route, from: _myPos!, to: _destination!)
+        : null;
+    final showFallbackNote =
+        _routeFallback || !_hasDestinationCoords;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Job route')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _loadError != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text('Could not load the route: $_loadError'),
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ---- Header card ----
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      b.serviceName,
+                                      style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  Chip(
+                                    label: Text(statusLabel(b.status)),
+                                    backgroundColor: AppColors.tealLight,
+                                  ),
+                                ],
+                              ),
+                              if (b.providerName != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('Customer: ${b.providerName}'),
+                                ),
+                              if (b.scheduledAt != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Scheduled: ${b.scheduledAt!.day}/${b.scheduledAt!.month}/${b.scheduledAt!.year} '
+                                    '${b.scheduledAt!.hour}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}',
+                                    style: const TextStyle(
+                                        color: AppColors.inkSoft),
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _address?.addressLine != null &&
+                                        _address!.addressLine!.isNotEmpty
+                                    ? _address!.addressLine!
+                                    : 'Customer ne map pin nahi lagaya — address text se jayein',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              if (_route != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    '${_route!.distanceKm.toStringAsFixed(1)} km · ETA ~${_route!.durationLabel}',
+                                    style: const TextStyle(
+                                        color: AppColors.teal,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // ---- Map ----
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          height: 320,
+                          child: FlutterMap(
+                            mapController: _mapController,
+                            options: MapOptions(
+                              initialCenter: _initialCenter,
+                              initialZoom: 13,
+                            ),
+                            children: [
+                              TileLayer(
+                                urlTemplate:
+                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName:
+                                    'com.projectservices.app',
+                              ),
+                              if (resolved != null)
+                                PolylineLayer(
+                                  polylines: [
+                                    Polyline(
+                                      points: resolved.points,
+                                      color: resolved.isFallback
+                                          ? AppColors.amber
+                                          : AppColors.teal,
+                                      strokeWidth: 4,
+                                      pattern: resolved.isFallback
+                                          ? StrokePattern.dashed(
+                                              segments: const [8, 6])
+                                          : const StrokePattern.solid(),
+                                    ),
+                                  ],
+                                ),
+                              MarkerLayer(
+                                markers: [
+                                  if (_myPos != null)
+                                    Marker(
+                                      point: _myPos!,
+                                      width: 60,
+                                      height: 50,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.teal,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: const Text(
+                                              'You',
+                                              style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                  fontWeight:
+                                                      FontWeight.bold),
+                                            ),
+                                          ),
+                                          const Icon(
+                                            Icons.location_on,
+                                            color: AppColors.teal,
+                                            size: 30,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  if (_destination != null)
+                                    Marker(
+                                      point: _destination!,
+                                      width: 40,
+                                      height: 40,
+                                      child: const Icon(
+                                        Icons.location_on,
+                                        color: AppColors.red,
+                                        size: 36,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_address?.addressLine != null &&
+                          _address!.addressLine!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Destination: ${_address!.addressLine!}'
+                            '${_address!.city != null ? ' · ${_address!.city}' : ''}',
+                            style: const TextStyle(color: AppColors.inkSoft),
+                          ),
+                        ),
+                      if (showFallbackNote)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Route nahi mil saka — seedhi line dikhayi ja rahi hai',
+                            style: TextStyle(color: AppColors.amberDark),
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                      // ---- Live location sharing ----
+                      if (!_jobActive)
+                        const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text(
+                              'Job complete ya cancel ho gaya hai — live location sharing band hai.',
+                              style: TextStyle(color: AppColors.inkSoft),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _sharing ? _stopSharing : _startSharing,
+                            icon: Icon(
+                              _sharing
+                                  ? Icons.location_off
+                                  : Icons.share_location,
+                            ),
+                            label: Text(_sharing
+                                ? 'Stop live location'
+                                : 'Share live location'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_sharing && _lastSharedAt != null)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE6F4EA),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.circle,
+                                    color: AppColors.green, size: 12),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Sharing live • updated ${_timeLabel(_lastSharedAt!)}',
+                                  style: const TextStyle(
+                                      color: AppColors.green,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (!_permissionOk)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text(
+                              'Location permission nahi hai — Settings se location on karein',
+                              style: TextStyle(color: AppColors.red),
+                            ),
+                          ),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Customer ko aapki live location sirf is job ke doran dikhayi jati hai.',
+                            style: TextStyle(
+                                color: AppColors.inkSoft, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+    );
+  }
+}

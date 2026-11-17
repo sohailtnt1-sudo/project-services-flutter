@@ -5,6 +5,7 @@ import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
 import 'chat_screen.dart';
+import 'job_route_screen.dart';
 import 'provider_onboarding_screen.dart';
 import 'tracking_screen.dart';
 
@@ -485,7 +486,37 @@ class _JobTileState extends State<_JobTile> {
         }
       }
       await updateBookingStatus(widget.booking.id, status);
+      // Terminal status: stop publishing my live location (best-effort,
+      // never fails the status update). The route screen's dispose does
+      // the same when the provider leaves it.
+      if (status == 'completed' ||
+          status == 'cancelled' ||
+          status == 'rejected') {
+        try {
+          await clearMyProviderLocation();
+        } catch (_) {
+          // Best-effort.
+        }
+      }
       widget.onChanged();
+      // Going on the way: nudge the provider to open the route screen
+      // and turn on live location sharing.
+      if (status == 'on_the_way' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Live location sharing on karne ke liye Route kholein'),
+            action: SnackBarAction(
+              label: 'Route kholein',
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => JobRouteScreen(booking: widget.booking),
+                ));
+              },
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         // The database trigger rejects an accept over the dues limit;
@@ -521,6 +552,17 @@ class _JobTileState extends State<_JobTile> {
     } else if (b.status == 'in_progress') {
       actions.add(ElevatedButton(
           onPressed: _busy ? null : () => _setStatus('completed'), child: const Text('Mark completed')));
+    }
+    // Route + live location sharing for active jobs.
+    if (kActiveJobStatuses.contains(b.status)) {
+      if (actions.isNotEmpty) actions.add(const SizedBox(width: 8));
+      actions.add(OutlinedButton.icon(
+        onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => JobRouteScreen(booking: b),
+        )),
+        icon: const Icon(Icons.route, size: 18),
+        label: const Text('Route'),
+      ));
     }
     return Card(
       child: Padding(

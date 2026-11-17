@@ -5,6 +5,8 @@ import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
 import 'chat_screen.dart';
+import 'job_route_screen.dart' show kActiveJobStatuses;
+import 'live_tracking_map.dart';
 
 class TrackingScreen extends StatefulWidget {
   final Booking? booking;
@@ -136,6 +138,20 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (b.providerId != null &&
+                    kActiveJobStatuses.contains(b.status)) ...[
+                  const Text('Live location',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Live location sirf is job ke doran dikhayi jati hai.',
+                    style: TextStyle(color: AppColors.inkSoft, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  LiveTrackingMap(booking: b),
+                  const SizedBox(height: 16),
+                ],
                 const Text('Status', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 ...bookingTimeline.asMap().entries.map((e) {

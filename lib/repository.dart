@@ -226,6 +226,8 @@ Future<String> createBooking({
   required String city,
   required num estimatedPrice,
   required num commissionAmount,
+  double? latitude,
+  double? longitude,
 }) async {
   final user = db.auth.currentUser!;
   String? addressId;
@@ -237,6 +239,8 @@ Future<String> createBooking({
           'label': 'Home',
           'address_line': addressText.trim(),
           'city': city.trim().isEmpty ? null : city.trim(),
+          if (latitude != null) 'latitude': latitude,
+          if (longitude != null) 'longitude': longitude,
           'is_default': false,
         })
         .select('id')
@@ -533,6 +537,17 @@ Future<void> setAvailability(bool online) async {
       },
       onConflict: 'provider_id,day_of_week',
     );
+  }
+  // Going offline must also hide the live location. Best-effort: the
+  // server-side hide_location_when_offline trigger (migration 007)
+  // deletes the row anyway — this is just the fast path, and it must
+  // never fail the availability toggle.
+  if (!online) {
+    try {
+      await clearMyProviderLocation();
+    } catch (_) {
+      // Ignore — the DB trigger is the enforcement.
+    }
   }
 }
 
@@ -921,4 +936,143 @@ RealtimeChannel subscribeToConversationMessages(
   );
   channel.subscribe();
   return channel;
+}
+
+// ---------- Provider live locations (migration 007, Phase A map) ----------
+
+/// Live positions of online + approved + available providers — the
+/// nearby markers on the customer map. RLS already restricts the rows
+/// to online/approved/available; this also filters client-side by
+/// verification_status + is_available (+ city when given) so a row can
+/// never slip through if the policy ever widens.
+Future<List<ProviderLocation>> fetchProviderLocations({String? city}) async {
+  final profiles = await db
+      .from('provider_profiles')
+      .select('id, city, verification_status, is_available')
+      .eq('verification_status', 'approved')
+      .eq('is_available', true);
+  final byId = <String, Map<String, dynamic>>{
+    for (final r in (profiles as List).cast<Map<String, dynamic>>())
+      r['id'] as String: r,
+  };
+  final res = await db
+      .from('provider_locations')
+      .select('provider_id, latitude, longitude, accuracy_m, is_online, updated_at')
+      .eq('is_online', true);
+  final out = <ProviderLocation>[];
+  for (final m in (res as List).cast<Map<String, dynamic>>()) {
+    final profile = byId[m['provider_id'] as String];
+    if (profile == null) continue;
+    if (!providerMatchesCity(profile['city'] as String?, city)) continue;
+    out.add(ProviderLocation.fromMap(m));
+  }
+  return out;
+}
+
+/// Publish (or refresh) my live position. Resolves my provider profile
+/// first; does nothing when I have no provider profile.
+Future<void> upsertMyProviderLocation({
+  required double latitude,
+  required double longitude,
+  double? accuracyMeters,
+}) async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return;
+  await db.from('provider_locations').upsert(
+    {
+      'provider_id': profile['id'] as String,
+      'latitude': latitude,
+      'longitude': longitude,
+      'accuracy_m': accuracyMeters,
+      'is_online': true,
+      'updated_at': DateTime.now().toIso8601String(),
+    },
+    onConflict: 'provider_id',
+  );
+}
+
+/// Delete my live-location row (going offline). Best-effort: never
+/// throws when there is no profile or no row.
+Future<void> clearMyProviderLocation() async {
+  try {
+    final profile = await fetchMyProviderProfile();
+    if (profile == null) return;
+    await db
+        .from('provider_locations')
+        .delete()
+        .eq('provider_id', profile['id'] as String);
+  } catch (_) {
+    // Best-effort — the hide_location_when_offline trigger (migration
+    // 007) deletes the row server-side when availability flips off.
+  }
+}
+
+/// Live updates for one provider's position (Supabase Realtime).
+/// Returns the channel — the caller must remove it on dispose with
+/// `db.removeChannel(channel)`. Needs provider_locations in the
+/// supabase_realtime publication (migration 007).
+RealtimeChannel subscribeToProviderLocation(
+  String providerId,
+  void Function(ProviderLocation) onUpdate,
+) {
+  final channel = db.channel('provider-location-$providerId');
+  channel.onPostgresChanges(
+    event: PostgresChangeEvent.insert,
+    schema: 'public',
+    table: 'provider_locations',
+    filter: PostgresChangeFilter(
+      type: PostgresChangeFilterType.eq,
+      column: 'provider_id',
+      value: providerId,
+    ),
+    callback: (payload) {
+      final row = payload.newRecord;
+      if (row.isEmpty) return;
+      try {
+        onUpdate(ProviderLocation.fromMap(Map<String, dynamic>.from(row)));
+      } catch (_) {
+        // Ignore malformed realtime payloads; a refetch covers it.
+      }
+    },
+  );
+  channel.onPostgresChanges(
+    event: PostgresChangeEvent.update,
+    schema: 'public',
+    table: 'provider_locations',
+    filter: PostgresChangeFilter(
+      type: PostgresChangeFilterType.eq,
+      column: 'provider_id',
+      value: providerId,
+    ),
+    callback: (payload) {
+      final row = payload.newRecord;
+      if (row.isEmpty) return;
+      try {
+        onUpdate(ProviderLocation.fromMap(Map<String, dynamic>.from(row)));
+      } catch (_) {
+        // Ignore malformed realtime payloads; a refetch covers it.
+      }
+    },
+  );
+  channel.subscribe();
+  return channel;
+}
+
+/// The saved address (with coordinates, when present) for a booking.
+/// Returns null when the booking has no address.
+Future<ServiceAddress?> fetchBookingAddress(String bookingId) async {
+  final booking = await db
+      .from('bookings')
+      .select('address_id')
+      .eq('id', bookingId)
+      .maybeSingle();
+  final addressId = booking?['address_id'] as String?;
+  if (addressId == null) return null;
+  final row = await db
+      .from('addresses')
+      .select('id, address_line, city, latitude, longitude')
+      .eq('id', addressId)
+      .maybeSingle();
+  if (row == null) return null;
+  return ServiceAddress.fromMap(row);
 }

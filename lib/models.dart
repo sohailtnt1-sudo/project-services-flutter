@@ -316,6 +316,59 @@ String normalizeCnic(String raw) => raw.replaceAll(RegExp(r'\D'), '');
 
 bool isValidCnic(String raw) => normalizeCnic(raw).length == 13;
 
+/// A provider's live position (migration 007, table provider_locations).
+/// One row per provider; visible to customers only while the provider is
+/// online + approved + available (enforced server-side by RLS and by the
+/// hide_location_when_offline trigger).
+class ProviderLocation {
+  final String providerId;
+  final double latitude;
+  final double longitude;
+  final double? accuracyMeters;
+  final bool isOnline;
+  final DateTime updatedAt;
+  ProviderLocation({
+    required this.providerId,
+    required this.latitude,
+    required this.longitude,
+    this.accuracyMeters,
+    required this.isOnline,
+    required this.updatedAt,
+  });
+  factory ProviderLocation.fromMap(Map<String, dynamic> m) => ProviderLocation(
+        providerId: m['provider_id'] as String,
+        latitude: (m['latitude'] as num).toDouble(),
+        longitude: (m['longitude'] as num).toDouble(),
+        accuracyMeters: (m['accuracy_m'] as num?)?.toDouble(),
+        isOnline: (m['is_online'] as bool?) ?? true,
+        updatedAt: DateTime.parse(m['updated_at'] as String),
+      );
+}
+
+/// A saved customer address (addresses table, migration 001) — the
+/// booking's destination, with optional coordinates for the map.
+class ServiceAddress {
+  final String id;
+  final String? addressLine;
+  final String? city;
+  final double? latitude;
+  final double? longitude;
+  ServiceAddress({
+    required this.id,
+    this.addressLine,
+    this.city,
+    this.latitude,
+    this.longitude,
+  });
+  factory ServiceAddress.fromMap(Map<String, dynamic> m) => ServiceAddress(
+        id: m['id'] as String,
+        addressLine: m['address_line'] as String?,
+        city: m['city'] as String?,
+        latitude: (m['latitude'] as num?)?.toDouble(),
+        longitude: (m['longitude'] as num?)?.toDouble(),
+      );
+}
+
 /// Booking status labels + the ordered timeline used on the tracking screen.
 const bookingStatusLabels = <String, String>{
   'pending': 'Pending',

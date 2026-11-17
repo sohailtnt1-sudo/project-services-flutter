@@ -4,9 +4,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
+import 'pin_picker_screen.dart';
 import 'tracking_screen.dart';
 
 class BookingScreen extends StatefulWidget {
@@ -28,6 +30,9 @@ class _BookingScreenState extends State<BookingScreen> {
   bool _busy = false;
   String? _error;
   String? _doneBookingId;
+  // Optional map pin from PinPickerScreen — passed to createBooking
+  // as latitude/longitude. Booking without a pin works as before.
+  LatLng? _pickedPoint;
 
   @override
   void dispose() {
@@ -70,6 +75,24 @@ class _BookingScreenState extends State<BookingScreen> {
     if (picked != null) setState(() => _time = picked);
   }
 
+  Future<void> _pickOnMap() async {
+    final city = _city.text.trim();
+    final result = await Navigator.of(context).push<PinResult>(
+      MaterialPageRoute(
+        builder: (_) => PinPickerScreen(
+          city: city.isEmpty ? 'Lahore' : city,
+          initialPoint: _pickedPoint,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _pickedPoint = result.point;
+      _address.text = result.addressText;
+      _city.text = result.city;
+    });
+  }
+
   Future<void> _confirm() async {
     if (_description.text.trim().isEmpty) {
       setState(() => _error = 'Please describe the problem.');
@@ -94,6 +117,8 @@ class _BookingScreenState extends State<BookingScreen> {
         city: _city.text,
         estimatedPrice: _jobValue,
         commissionAmount: _commission,
+        latitude: _pickedPoint?.latitude,
+        longitude: _pickedPoint?.longitude,
       );
       if (_photos.isNotEmpty) {
         final files = _photos.map((x) => File(x.path)).toList();
@@ -269,6 +294,23 @@ class _BookingScreenState extends State<BookingScreen> {
               controller: _address,
               decoration: const InputDecoration(hintText: 'House, street, area'),
             ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _pickOnMap,
+              icon: const Icon(Icons.map),
+              label: const Text('Pick on map'),
+            ),
+            if (_pickedPoint != null) ...[
+              const SizedBox(height: 8),
+              Chip(
+                avatar: const Icon(Icons.location_on,
+                    size: 16, color: AppColors.teal),
+                label: Text(
+                  'Pinned: ${_pickedPoint!.latitude.toStringAsFixed(2)}, '
+                  '${_pickedPoint!.longitude.toStringAsFixed(2)}',
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             TextField(
               controller: _city,
