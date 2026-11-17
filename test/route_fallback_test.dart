@@ -1,6 +1,7 @@
 // Phase C: route fallback + live-tracking gate (pure logic, no network).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:project_services/models.dart';
 import 'package:project_services/screens/job_route_screen.dart';
 import 'package:project_services/screens/live_tracking_map.dart';
 import 'package:project_services/services/map_api.dart';
@@ -62,6 +63,123 @@ void main() {
       ]) {
         expect(isLiveTrackingActive(s), isFalse, reason: s);
       }
+    });
+  });
+
+  group('resolveRouteDestination', () {
+    const pickup = LatLng(30.1833, 66.9667);
+    const customer = LatLng(30.2000, 66.9900);
+    final address = ServiceAddress(
+      id: 'addr-1',
+      addressLine: 'House 12, Samungli Road, Quetta',
+      city: 'Quetta',
+      latitude: customer.latitude,
+      longitude: customer.longitude,
+    );
+
+    Booking booking({
+      required String status,
+      String? pickupAddress,
+      double? pickupLatitude,
+      double? pickupLongitude,
+      String? pickupShopName,
+    }) =>
+        Booking(
+          id: 'bk-1',
+          customerId: 'cust-1',
+          serviceName: 'Parcel & Item Pickup',
+          status: status,
+          paymentStatus: 'pending',
+          createdAt: DateTime(2026, 11, 18),
+          pickupShopName: pickupShopName,
+          pickupAddress: pickupAddress,
+          pickupLatitude: pickupLatitude,
+          pickupLongitude: pickupLongitude,
+        );
+
+    test('delivery on_the_way routes to the pickup point', () {
+      final resolved = resolveRouteDestination(
+        booking: booking(
+          status: 'on_the_way',
+          pickupAddress: 'Al-Madina Medical Store, Samungli Road',
+          pickupLatitude: pickup.latitude,
+          pickupLongitude: pickup.longitude,
+        ),
+        address: address,
+        pickupPoint: pickup,
+      );
+      expect(resolved.destination, pickup);
+      expect(resolved.isPickup, isTrue);
+      expect(resolved.label, 'Al-Madina Medical Store, Samungli Road');
+    });
+
+    test('delivery accepted also routes to the pickup (first leg)', () {
+      final resolved = resolveRouteDestination(
+        booking: booking(
+          status: 'accepted',
+          pickupAddress: 'Al-Madina Medical Store, Samungli Road',
+          pickupLatitude: pickup.latitude,
+          pickupLongitude: pickup.longitude,
+        ),
+        address: address,
+        pickupPoint: pickup,
+      );
+      expect(resolved.destination, pickup);
+      expect(resolved.isPickup, isTrue);
+    });
+
+    test('delivery in_progress routes to the customer address', () {
+      final resolved = resolveRouteDestination(
+        booking: booking(
+          status: 'in_progress',
+          pickupAddress: 'Al-Madina Medical Store, Samungli Road',
+          pickupLatitude: pickup.latitude,
+          pickupLongitude: pickup.longitude,
+        ),
+        address: address,
+        pickupPoint: pickup,
+      );
+      expect(resolved.destination, customer);
+      expect(resolved.isPickup, isFalse);
+      expect(resolved.label, 'House 12, Samungli Road, Quetta');
+    });
+
+    test('delivery with pickup text but no coords shows the text, no point',
+        () {
+      final resolved = resolveRouteDestination(
+        booking: booking(
+          status: 'on_the_way',
+          pickupAddress: 'Al-Madina Medical Store, Samungli Road',
+        ),
+        address: address,
+        pickupPoint: null,
+      );
+      expect(resolved.destination, isNull);
+      expect(resolved.isPickup, isTrue);
+      expect(resolved.label, 'Al-Madina Medical Store, Samungli Road');
+    });
+
+    test('normal booking routes to the customer address', () {
+      final resolved = resolveRouteDestination(
+        booking: booking(status: 'on_the_way'),
+        address: address,
+        pickupPoint: null,
+      );
+      expect(resolved.destination, customer);
+      expect(resolved.isPickup, isFalse);
+      expect(resolved.label, 'House 12, Samungli Road, Quetta');
+    });
+
+    test('normal booking without an address has no destination', () {
+      final resolved = resolveRouteDestination(
+        booking: booking(status: 'on_the_way'),
+        address: null,
+        pickupPoint: null,
+      );
+      expect(resolved.destination, isNull);
+      expect(resolved.isPickup, isFalse);
+      expect(resolved.label,
+          'Customer ne map pin nahi lagaya — address text se jayein');
     });
   });
 }

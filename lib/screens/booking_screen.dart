@@ -15,7 +15,15 @@ class BookingScreen extends StatefulWidget {
   final ServiceItem service;
   final Provider? provider;
   final num price;
-  const BookingScreen({super.key, required this.service, required this.provider, required this.price});
+  // The customer's currently selected city (threaded from the Home /
+  // providers flow) — the city field defaults to it, not to Lahore.
+  final String city;
+  const BookingScreen(
+      {super.key,
+      required this.service,
+      required this.provider,
+      required this.price,
+      this.city = kDefaultCity});
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
@@ -23,7 +31,7 @@ class BookingScreen extends StatefulWidget {
 class _BookingScreenState extends State<BookingScreen> {
   final _description = TextEditingController();
   final _address = TextEditingController();
-  final _city = TextEditingController(text: 'Lahore');
+  late final _city = TextEditingController(text: widget.city);
   DateTime _date = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _time = const TimeOfDay(hour: 18, minute: 0);
   final List<XFile> _photos = [];
@@ -80,7 +88,7 @@ class _BookingScreenState extends State<BookingScreen> {
     final result = await Navigator.of(context).push<PinResult>(
       MaterialPageRoute(
         builder: (_) => PinPickerScreen(
-          city: city.isEmpty ? 'Lahore' : city,
+          city: city.isEmpty ? widget.city : city,
           initialPoint: _pickedPoint,
         ),
       ),

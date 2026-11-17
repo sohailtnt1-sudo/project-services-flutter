@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../services/location_service.dart';
+import '../services/map_api.dart';
 import '../theme.dart';
 import 'booking_screen.dart';
 import 'chat_screen.dart';
@@ -78,10 +79,18 @@ class _HomeTabState extends State<_HomeTab> {
 
   // ---- Phase B: interactive map state ----
   final _mapController = MapController();
+  final _mapApi = MapApi();
   // Map centre: GPS position when known, else the selected city's centre.
   LatLng _mapCenter = const LatLng(31.5204, 74.3587); // Lahore
   LatLng? _myLocation;
   bool _mapReady = false;
+  // Auto city select from the first GPS fix runs once per Home visit,
+  // and only while the city is still the untouched default — a city
+  // the customer picked by hand is never overridden.
+  bool _didAutoSelectCity = false;
+  // City change that came from the GPS fix: keep the exact GPS centre
+  // instead of jumping back to the city centre in didUpdateWidget.
+  bool _keepGpsCenter = false;
   double _radiusKm = 10;
   List<Provider> _mapProviders = [];
   List<ProviderLocation> _locations = [];
@@ -104,9 +113,16 @@ class _HomeTabState extends State<_HomeTab> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.city != widget.city) {
       _providers = fetchApprovedProviders(city: widget.city);
-      // New city: re-centre on its centre and re-fetch map data.
-      _mapCenter = kCityCenters[widget.city] ?? const LatLng(31.5204, 74.3587);
-      if (_mapReady) _mapController.move(_mapCenter, 12);
+      if (_keepGpsCenter) {
+        // The city came from the GPS fix: the map is already centred
+        // on the customer's exact position — do not jump back to the
+        // city centre. Providers still reload for the new city.
+        _keepGpsCenter = false;
+      } else {
+        // New city: re-centre on its centre and re-fetch map data.
+        _mapCenter = kCityCenters[widget.city] ?? const LatLng(31.5204, 74.3587);
+        if (_mapReady) _mapController.move(_mapCenter, 12);
+      }
       _loadMapData();
     }
   }
@@ -143,6 +159,10 @@ class _HomeTabState extends State<_HomeTab> {
 
   /// Centre the map on the device's GPS position. Never throws and
   /// never crashes when permission is denied — the city centre stays.
+  /// On the first fix, also infer the customer's city from the GPS
+  /// position (reverse-geocode) and auto-select it when it is one of
+  /// the served cities and the city is still the untouched default;
+  /// otherwise the default stays.
   Future<void> _locateMe({bool initial = false}) async {
     final pos = await getCurrentPosition();
     if (!mounted) return;
@@ -162,6 +182,17 @@ class _HomeTabState extends State<_HomeTab> {
       _mapCenter = pos;
     });
     if (_mapReady) _mapController.move(pos, 13);
+    if (initial && !_didAutoSelectCity) {
+      _didAutoSelectCity = true;
+      if (widget.city == kDefaultCity) {
+        final cityName = await _mapApi.reverseGeocodeCity(pos);
+        final matched = matchServiceCity(cityName);
+        if (matched != null && matched != widget.city && mounted) {
+          _keepGpsCenter = true;
+          widget.onCityChanged(matched);
+        }
+      }
+    }
   }
 
   /// Providers with a live location, within the selected radius of the
@@ -595,6 +626,7 @@ class _HomeTabState extends State<_HomeTab> {
                                 service: s,
                                 provider: p,
                                 price: p.price ?? s.basePrice,
+                                city: widget.city,
                               ),
                             ));
                           },

@@ -68,6 +68,19 @@ String? parseReverseGeocodeDisplayName(Map<String, dynamic> json) {
   return null;
 }
 
+/// The city name from a Nominatim reverse-geocode response
+/// (addressdetails=1): city, else town / village / municipality /
+/// county. Returns null when none is present.
+String? parseReverseGeocodeCity(Map<String, dynamic> json) {
+  final address = json['address'];
+  if (address is! Map<String, dynamic>) return null;
+  for (final key in ['city', 'town', 'village', 'municipality', 'county']) {
+    final value = address[key];
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+  }
+  return null;
+}
+
 /// Parse a Nominatim search response (a JSON array) into suggestions.
 List<PlaceSuggestion> parseSearchJson(List<dynamic> json) {
   final out = <PlaceSuggestion>[];
@@ -139,9 +152,10 @@ class MapApi {
         'User-Agent': kMapUserAgent,
       };
 
-  /// Human-readable address for a point, or null on any failure.
-  /// Never throws.
-  Future<String?> reverseGeocode(LatLng point) async {
+  /// Raw reverse-geocode response for a point, or null on any failure.
+  /// Never throws. Shared by [reverseGeocode] and [reverseGeocodeCity]
+  /// so the two callers do not issue duplicate requests.
+  Future<Map<String, dynamic>?> _reverseGeocodeJson(LatLng point) async {
     try {
       await _throttleNominatim();
       final uri = Uri.parse(
@@ -153,10 +167,26 @@ class MapApi {
       if (res.statusCode != 200) return null;
       final json = jsonDecode(res.body);
       if (json is! Map<String, dynamic>) return null;
-      return parseReverseGeocodeDisplayName(json);
+      return json;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Human-readable address for a point, or null on any failure.
+  /// Never throws.
+  Future<String?> reverseGeocode(LatLng point) async {
+    final json = await _reverseGeocodeJson(point);
+    if (json == null) return null;
+    return parseReverseGeocodeDisplayName(json);
+  }
+
+  /// City name for a point (from the reverse-geocode address details),
+  /// or null on any failure. Never throws.
+  Future<String?> reverseGeocodeCity(LatLng point) async {
+    final json = await _reverseGeocodeJson(point);
+    if (json == null) return null;
+    return parseReverseGeocodeCity(json);
   }
 
   /// Place suggestions for a query (Pakistan by default). Empty list on

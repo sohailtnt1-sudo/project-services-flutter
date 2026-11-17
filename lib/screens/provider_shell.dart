@@ -497,6 +497,11 @@ class _JobTileState extends State<_JobTile> {
         } catch (_) {
           // Best-effort.
         }
+        // The "Route kholein" nudge must not outlive the job: dismiss
+        // it, so it cannot open the route screen for a completed job.
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        }
       }
       widget.onChanged();
       // Going on the way: nudge the provider to open the route screen
@@ -509,6 +514,12 @@ class _JobTileState extends State<_JobTile> {
             action: SnackBarAction(
               label: 'Route kholein',
               onPressed: () {
+                // Dismiss first: the root ScaffoldMessenger keeps this
+                // snackbar visible after navigation, so without this the
+                // stale "Route kholein" action lingers on the route
+                // screen itself and tapping it just pushes a duplicate
+                // screen (looks like nothing happened).
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => JobRouteScreen(booking: widget.booking),
                 ));

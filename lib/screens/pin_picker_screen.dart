@@ -60,7 +60,23 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
     if (widget.initialPoint != null) {
       _pin = widget.initialPoint;
       _resolveAddress(_pin!);
+    } else {
+      // No pin yet: start on the customer's own position when GPS is
+      // available (city centre above stays until the fix arrives, and
+      // Lahore is only the last-resort fallback). No pin is dropped —
+      // the customer taps to place one.
+      _locateMe();
     }
+  }
+
+  /// Centre the map on the device position when available. Never
+  /// throws, never blocks the screen; on failure the city centre stays.
+  Future<void> _locateMe() async {
+    final pos = await getCurrentPosition();
+    if (!mounted || _pin != null) return;
+    if (pos == null) return;
+    setState(() => _center = pos);
+    if (_mapReady) _mapController.move(pos, 15);
   }
 
   @override

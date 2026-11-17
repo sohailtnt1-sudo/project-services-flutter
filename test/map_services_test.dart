@@ -222,4 +222,64 @@ void main() {
       expect(kCityCenters['Quetta'], const LatLng(30.1798, 66.9750));
     });
   });
+
+  group('parseReverseGeocodeCity', () {
+    test('returns the city from address details', () {
+      expect(
+        parseReverseGeocodeCity({
+          'display_name': 'Samungli Road, Quetta, Balochistan, Pakistan',
+          'address': {
+            'road': 'Samungli Road',
+            'city': 'Quetta',
+            'state': 'Balochistan',
+            'country': 'Pakistan',
+          },
+        }),
+        'Quetta',
+      );
+    });
+
+    test('falls back to town / village when there is no city', () {
+      expect(
+        parseReverseGeocodeCity({
+          'address': {'town': 'Nowshera', 'state': 'Khyber Pakhtunkhwa'},
+        }),
+        'Nowshera',
+      );
+      expect(
+        parseReverseGeocodeCity({
+          'address': {'village': 'Kuchlak', 'county': 'Quetta District'},
+        }),
+        'Kuchlak',
+      );
+    });
+
+    test('returns null when there is no usable address', () {
+      expect(parseReverseGeocodeCity({}), isNull);
+      expect(parseReverseGeocodeCity({'address': {'road': 'Mall Road'}}),
+          isNull);
+      expect(parseReverseGeocodeCity({'address': 'not-a-map'}), isNull);
+    });
+  });
+
+  group('matchServiceCity', () {
+    test('matches served cities case-insensitively', () {
+      expect(matchServiceCity('Quetta'), 'Quetta');
+      expect(matchServiceCity('quetta'), 'Quetta');
+      expect(matchServiceCity('LAHORE'), 'Lahore');
+      expect(matchServiceCity('Rawalpindi'), 'Rawalpindi');
+    });
+
+    test('matches district-style names starting with the city', () {
+      expect(matchServiceCity('Quetta District'), 'Quetta');
+      expect(matchServiceCity('Islamabad Capital Territory'), 'Islamabad');
+    });
+
+    test('returns null outside the served cities', () {
+      expect(matchServiceCity('New York'), isNull);
+      expect(matchServiceCity('Multan'), isNull);
+      expect(matchServiceCity(null), isNull);
+      expect(matchServiceCity('  '), isNull);
+    });
+  });
 }

@@ -1,6 +1,7 @@
 // Device location for AsaanKaam (Phase A map features).
 // Thin wrapper around geolocator + pure helpers (haversine distance,
 // radius check, city centres) that are unit-testable without a device.
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:geolocator/geolocator.dart';
@@ -18,10 +19,30 @@ const Map<String, LatLng> kCityCenters = {
   'Quetta': LatLng(30.1798, 66.9750),
 };
 
+/// Match a reverse-geocoded city name (e.g. from Nominatim) to one of
+/// the served cities. Matches exactly (case-insensitive), or when the
+/// name starts with a served city ("Quetta District", "Islamabad
+/// Capital Territory"). Returns the canonical city name, or null when
+/// the customer is outside the served cities.
+String? matchServiceCity(String? placeCity) {
+  final wanted = (placeCity ?? '').trim().toLowerCase();
+  if (wanted.isEmpty) return null;
+  for (final city in kCityCenters.keys) {
+    final name = city.toLowerCase();
+    if (wanted == name || wanted.startsWith('$name ')) return city;
+  }
+  return null;
+}
+
+/// How long to wait for a GPS fix before giving up: the map must never
+/// hang on a slow fix — callers fall back to the city centre instead.
+const Duration kGpsTimeout = Duration(seconds: 6);
+
 /// The device's current position, or null when it cannot be obtained.
 /// Never throws: location services disabled, permission denied,
-/// denied-forever, or any platform error all return null. Requests
-/// permission once when it is currently denied.
+/// denied-forever, a slow GPS fix (see [kGpsTimeout]), or any platform
+/// error all return null. Requests permission once when it is currently
+/// denied.
 Future<LatLng?> getCurrentPosition() async {
   try {
     if (!await Geolocator.isLocationServiceEnabled()) return null;
@@ -33,7 +54,8 @@ Future<LatLng?> getCurrentPosition() async {
         permission == LocationPermission.deniedForever) {
       return null;
     }
-    final pos = await Geolocator.getCurrentPosition();
+    final pos =
+        await Geolocator.getCurrentPosition().timeout(kGpsTimeout);
     return LatLng(pos.latitude, pos.longitude);
   } catch (_) {
     return null;

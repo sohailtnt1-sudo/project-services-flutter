@@ -75,6 +75,12 @@ class Booking {
   final num? finalPrice;
   final num? commissionAmount;
   final DateTime createdAt;
+  // Delivery on Demand (migration 008): pickup point for rider jobs.
+  // Null for normal service bookings.
+  final String? pickupShopName;
+  final String? pickupAddress;
+  final double? pickupLatitude;
+  final double? pickupLongitude;
   Booking({
     required this.id,
     required this.customerId,
@@ -90,7 +96,17 @@ class Booking {
     this.finalPrice,
     this.commissionAmount,
     required this.createdAt,
+    this.pickupShopName,
+    this.pickupAddress,
+    this.pickupLatitude,
+    this.pickupLongitude,
   });
+
+  /// True when this is a delivery booking with a pickup point
+  /// (coordinates, or at least a pickup address text).
+  bool get hasPickup =>
+      (pickupLatitude != null && pickupLongitude != null) ||
+      (pickupAddress != null && pickupAddress!.trim().isNotEmpty);
 }
 
 class BookingMedia {

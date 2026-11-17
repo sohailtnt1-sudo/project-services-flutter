@@ -42,6 +42,57 @@ const Set<String> kActiveJobStatuses = {
   return (points: [from, to], isFallback: true);
 }
 
+/// Pure destination-resolution helper (unit-tested in
+/// test/route_fallback_test.dart):
+/// - Delivery booking (has a pickup point): while the rider has not
+///   picked up yet, the destination is the pickup point; once the job
+///   is in_progress (picked up) the destination is the customer's
+///   address.
+/// - Normal booking: the customer's address.
+/// [pickupPoint] is the pickup coordinates (from the booking row, or
+/// geocoded from the pickup address text by the caller).
+({LatLng? destination, String label, bool isPickup}) resolveRouteDestination({
+  required Booking booking,
+  required ServiceAddress? address,
+  required LatLng? pickupPoint,
+}) {
+  const noPin = 'Customer ne map pin nahi lagaya — address text se jayein';
+  final pickupLabel = (booking.pickupAddress != null &&
+          booking.pickupAddress!.trim().isNotEmpty)
+      ? booking.pickupAddress!.trim()
+      : (booking.pickupShopName != null &&
+              booking.pickupShopName!.trim().isNotEmpty)
+          ? booking.pickupShopName!.trim()
+          : 'Pickup point';
+  final addressLabel = (address?.addressLine != null &&
+          address!.addressLine!.isNotEmpty)
+      ? address.addressLine!
+      : noPin;
+  final addressPoint = (address != null &&
+          address.latitude != null &&
+          address.longitude != null)
+      ? LatLng(address.latitude!, address.longitude!)
+      : null;
+
+  final isDelivery = pickupPoint != null || booking.hasPickup;
+  if (isDelivery && booking.status != 'in_progress') {
+    // First leg: rider travels to the pickup (accepted / confirmed /
+    // on_the_way). Coordinates may still be null when the pickup
+    // address text could not be geocoded — the label still shows the
+    // text so the rider can navigate by it.
+    return (
+      destination: pickupPoint,
+      label: pickupLabel,
+      isPickup: true,
+    );
+  }
+  return (
+    destination: addressPoint,
+    label: addressLabel,
+    isPickup: false,
+  );
+}
+
 class JobRouteScreen extends StatefulWidget {
   final Booking booking;
   const JobRouteScreen({super.key, required this.booking});
@@ -54,6 +105,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
   final MapApi _mapApi = MapApi();
 
   ServiceAddress? _address;
+  LatLng? _pickupPoint; // Delivery bookings: resolved pickup coordinates.
   LatLng? _myPos;
   RouteResult? _route;
   bool _routeFallback = false;
@@ -69,11 +121,23 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
 
   bool get _jobActive => kActiveJobStatuses.contains(widget.booking.status);
 
-  bool get _hasDestinationCoords =>
-      _address != null && _address!.latitude != null && _address!.longitude != null;
+  /// Resolved destination for the current leg: the pickup point for a
+  /// delivery booking that has not been picked up yet, else the
+  /// customer's address (see resolveRouteDestination).
+  ({LatLng? destination, String label, bool isPickup})
+      get _resolvedDestination => resolveRouteDestination(
+            booking: widget.booking,
+            address: _address,
+            pickupPoint: _pickupPoint,
+          );
 
-  LatLng? get _destination =>
-      _hasDestinationCoords ? LatLng(_address!.latitude!, _address!.longitude!) : null;
+  bool get _hasDestinationCoords => _resolvedDestination.destination != null;
+
+  LatLng? get _destination => _resolvedDestination.destination;
+
+  String get _destinationLabel => _resolvedDestination.label;
+
+  bool get _isPickupDestination => _resolvedDestination.isPickup;
 
   LatLng get _initialCenter =>
       _myPos ?? _destination ?? kCityCenters['Lahore']!;
@@ -87,11 +151,25 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
   Future<void> _load() async {
     try {
       final address = await fetchBookingAddress(widget.booking.id);
+      // Delivery bookings: resolve the pickup point — coordinates from
+      // the booking row when the customer dropped a pin, else geocode
+      // the pickup address text (Nominatim search, Pakistan).
+      LatLng? pickupPoint;
+      final b = widget.booking;
+      if (b.pickupLatitude != null && b.pickupLongitude != null) {
+        pickupPoint = LatLng(b.pickupLatitude!, b.pickupLongitude!);
+      } else if (b.pickupAddress != null && b.pickupAddress!.trim().isNotEmpty) {
+        final hits = await _mapApi.searchPlaces(b.pickupAddress!);
+        if (hits.isNotEmpty) {
+          pickupPoint = LatLng(hits.first.latitude, hits.first.longitude);
+        }
+      }
       var myPos = await getCurrentPosition();
       myPos ??= _fallbackCenter(address?.city);
       if (!mounted) return;
       setState(() {
         _address = address;
+        _pickupPoint = pickupPoint;
         _myPos = myPos;
         _loading = false;
       });
@@ -294,10 +372,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                                 ),
                               const SizedBox(height: 8),
                               Text(
-                                _address?.addressLine != null &&
-                                        _address!.addressLine!.isNotEmpty
-                                    ? _address!.addressLine!
-                                    : 'Customer ne map pin nahi lagaya — address text se jayein',
+                                _destinationLabel,
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold),
                               ),
@@ -402,7 +477,15 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                           ),
                         ),
                       ),
-                      if (_address?.addressLine != null &&
+                      if (_isPickupDestination)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Pickup: $_destinationLabel',
+                            style: const TextStyle(color: AppColors.inkSoft),
+                          ),
+                        )
+                      else if (_address?.addressLine != null &&
                           _address!.addressLine!.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),

@@ -290,7 +290,7 @@ Future<List<Booking>> fetchMyBookings() async {
   final user = db.auth.currentUser!;
   final res = await db
       .from('bookings')
-      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, services(name), provider_profiles(id, profiles(full_name))')
+      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, pickup_shop_name, pickup_address, pickup_latitude, pickup_longitude, services(name), provider_profiles(id, profiles(full_name))')
       .eq('customer_id', user.id)
       .order('created_at', ascending: false);
   return (res as List).map((m) {
@@ -317,6 +317,10 @@ Future<List<Booking>> fetchMyBookings() async {
       finalPrice: (row['final_price'] as num?),
       commissionAmount: (row['commission_amount'] as num?),
       createdAt: DateTime.parse(row['created_at'] as String),
+      pickupShopName: row['pickup_shop_name'] as String?,
+      pickupAddress: row['pickup_address'] as String?,
+      pickupLatitude: (row['pickup_latitude'] as num?)?.toDouble(),
+      pickupLongitude: (row['pickup_longitude'] as num?)?.toDouble(),
     );
   }).toList();
 }
@@ -557,7 +561,7 @@ Future<List<Booking>> fetchProviderJobs() async {
   final providerId = profile['id'] as String;
   final res = await db
       .from('bookings')
-      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, services(name), profiles!bookings_customer_id_fkey(full_name)')
+      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, pickup_shop_name, pickup_address, pickup_latitude, pickup_longitude, services(name), profiles!bookings_customer_id_fkey(full_name)')
       .eq('provider_id', providerId)
       .order('created_at', ascending: false);
   return (res as List).map((m) {
@@ -579,6 +583,10 @@ Future<List<Booking>> fetchProviderJobs() async {
       finalPrice: (row['final_price'] as num?),
       commissionAmount: (row['commission_amount'] as num?),
       createdAt: DateTime.parse(row['created_at'] as String),
+      pickupShopName: row['pickup_shop_name'] as String?,
+      pickupAddress: row['pickup_address'] as String?,
+      pickupLatitude: (row['pickup_latitude'] as num?)?.toDouble(),
+      pickupLongitude: (row['pickup_longitude'] as num?)?.toDouble(),
     );
   }).toList();
 }

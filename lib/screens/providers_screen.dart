@@ -114,7 +114,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           ],
                         ),
                         onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => BookingScreen(service: s, provider: p, price: price),
+                          builder: (_) => BookingScreen(service: s, provider: p, price: price, city: widget.city),
                         )),
                       ),
                     );
@@ -129,7 +129,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
               width: double.infinity,
               child: OutlinedButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => BookingScreen(service: s, provider: null, price: s.basePrice),
+                  builder: (_) => BookingScreen(service: s, provider: null, price: s.basePrice, city: widget.city),
                 )),
                 child: const Text('Book without choosing a technician'),
               ),
