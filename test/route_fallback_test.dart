@@ -178,8 +178,85 @@ void main() {
       );
       expect(resolved.destination, isNull);
       expect(resolved.isPickup, isFalse);
-      expect(resolved.label,
-          'Customer ne map pin nahi lagaya — address text se jayein');
+      expect(resolved.label, kNoPinMessage);
+    });
+
+    test(
+        'REGRESSION 18 Nov 2026: delivery booking with NO pickup data '
+        'routes to the customer address when it has coords', () {
+      // The live Grocery Delivery booking had pickup_* all NULL but a
+      // real address pin (Askari Mall, Airport Road, Quetta). The
+      // route screen must route to that pin — not show "no pin".
+      final resolved = resolveRouteDestination(
+        booking: booking(status: 'on_the_way'),
+        address: address,
+        pickupPoint: null,
+      );
+      expect(resolved.destination, customer);
+      expect(resolved.isPickup, isFalse);
+      expect(resolved.label, 'House 12, Samungli Road, Quetta');
+    });
+  });
+
+  group('geocodeQueryCandidates', () {
+    test('raw text only when no city is known', () {
+      expect(
+        geocodeQueryCandidates('Askari Mall, Airport Road', null),
+        ['Askari Mall, Airport Road'],
+      );
+      expect(
+        geocodeQueryCandidates('Askari Mall, Airport Road', ''),
+        ['Askari Mall, Airport Road'],
+      );
+    });
+
+    test('retries with the city appended when the text lacks it', () {
+      expect(
+        geocodeQueryCandidates('Askari Mall, Airport Road', 'Quetta'),
+        ['Askari Mall, Airport Road', 'Askari Mall, Airport Road, Quetta'],
+      );
+    });
+
+    test('no duplicate when the text already contains the city', () {
+      expect(
+        geocodeQueryCandidates('Askari Mall, Airport Road, Quetta', 'Quetta'),
+        ['Askari Mall, Airport Road, Quetta'],
+      );
+      expect(
+        geocodeQueryCandidates('Airport Road, QUETTA', 'Quetta'),
+        ['Airport Road, QUETTA'],
+      );
+    });
+
+    test('empty text yields no queries', () {
+      expect(geocodeQueryCandidates('   ', 'Quetta'), isEmpty);
+    });
+  });
+
+  group('shouldDeleteLocationRow', () {
+    test('leaving the route screen must NOT delete the row', () {
+      // REGRESSION 18 Nov 2026: dispose() deleted the row the moment
+      // the provider left the route screen, so the customer almost
+      // never saw the rider live.
+      expect(
+        shouldDeleteLocationRow(LocationStopReason.leftRouteScreen),
+        isFalse,
+      );
+    });
+
+    test('explicit stop, terminal status and going offline DO delete', () {
+      expect(
+        shouldDeleteLocationRow(LocationStopReason.explicitStop),
+        isTrue,
+      );
+      expect(
+        shouldDeleteLocationRow(LocationStopReason.jobTerminal),
+        isTrue,
+      );
+      expect(
+        shouldDeleteLocationRow(LocationStopReason.wentOffline),
+        isTrue,
+      );
     });
   });
 }

@@ -487,8 +487,11 @@ class _JobTileState extends State<_JobTile> {
       }
       await updateBookingStatus(widget.booking.id, status);
       // Terminal status: stop publishing my live location (best-effort,
-      // never fails the status update). The route screen's dispose does
-      // the same when the provider leaves it.
+      // never fails the status update). This is the ONLY place (besides
+      // the explicit "Stop live location" tap and going offline) that
+      // deletes the location row — the route screen's dispose
+      // deliberately does NOT delete it, so the customer keeps seeing
+      // the rider's last-known position while the job is active.
       if (status == 'completed' ||
           status == 'cancelled' ||
           status == 'rejected') {

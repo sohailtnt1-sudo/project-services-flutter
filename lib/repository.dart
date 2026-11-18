@@ -7,6 +7,11 @@ import 'models.dart';
 
 const double kCommissionRate = 0.15;
 
+/// Category slug for Delivery on Demand (migration 008). The app gates
+/// its delivery booking fields on this slug — same value as the website
+/// (booking-form.tsx) and the seeded category row.
+const String kDeliveryCategorySlug = 'delivery-on-demand';
+
 /// Dues limit for providers (Rs. 2,000). DISPLAY ONLY — the real check is
 /// server-side: public.wallet_dues_limit() + provider_can_accept_jobs()
 /// (migration 005). If the DB limit ever changes, update this to match.
@@ -125,6 +130,25 @@ Future<List<ServiceItem>> fetchAllServices() async {
   return (res as List).map((m) => ServiceItem.fromMap(m as Map<String, dynamic>)).toList();
 }
 
+/// Category slug for one service (e.g. 'delivery-on-demand'). Used by
+/// the booking screen when the category was not threaded through from
+/// the category list — the delivery fields gate on this slug.
+Future<String?> fetchCategorySlugForService(String serviceId) async {
+  final row = await db
+      .from('services')
+      .select('categories(slug)')
+      .eq('id', serviceId)
+      .maybeSingle();
+  if (row == null) return null;
+  final cat = row['categories'];
+  if (cat is Map<String, dynamic>) return cat['slug'] as String?;
+  if (cat is List && cat.isNotEmpty) {
+    final first = cat.first;
+    if (first is Map<String, dynamic>) return first['slug'] as String?;
+  }
+  return null;
+}
+
 // ---------- Providers (approved, live) ----------
 
 /// Approved providers who offer [serviceId], with their own charge.
@@ -228,6 +252,15 @@ Future<String> createBooking({
   required num commissionAmount,
   double? latitude,
   double? longitude,
+  // Delivery on Demand (migration 008): the pickup point for rider
+  // jobs. The website form already saves these; the app did not send
+  // them at all, so app-made delivery bookings always had pickup_*
+  // NULL and the rider got no pickup point. Only sent when set.
+  String? pickupShopName,
+  String? pickupAddress,
+  double? pickupLatitude,
+  double? pickupLongitude,
+  num? itemCost,
 }) async {
   final user = db.auth.currentUser!;
   String? addressId;
@@ -247,20 +280,30 @@ Future<String> createBooking({
         .single();
     addressId = (addr as Map<String, dynamic>)['id'] as String;
   }
+  final insert = <String, dynamic>{
+    'customer_id': user.id,
+    'provider_id': providerId,
+    'service_id': serviceId,
+    'address_id': addressId,
+    'description': description.trim(),
+    'scheduled_at': scheduledAt.toIso8601String(),
+    'estimated_price': estimatedPrice,
+    'commission_amount': commissionAmount,
+    'status': 'pending',
+    'payment_status': 'pending',
+  };
+  if (pickupShopName != null && pickupShopName.trim().isNotEmpty) {
+    insert['pickup_shop_name'] = pickupShopName.trim();
+  }
+  if (pickupAddress != null && pickupAddress.trim().isNotEmpty) {
+    insert['pickup_address'] = pickupAddress.trim();
+  }
+  if (pickupLatitude != null) insert['pickup_latitude'] = pickupLatitude;
+  if (pickupLongitude != null) insert['pickup_longitude'] = pickupLongitude;
+  if (itemCost != null && itemCost > 0) insert['item_cost'] = itemCost;
   final row = await db
       .from('bookings')
-      .insert({
-        'customer_id': user.id,
-        'provider_id': providerId,
-        'service_id': serviceId,
-        'address_id': addressId,
-        'description': description.trim(),
-        'scheduled_at': scheduledAt.toIso8601String(),
-        'estimated_price': estimatedPrice,
-        'commission_amount': commissionAmount,
-        'status': 'pending',
-        'payment_status': 'pending',
-      })
+      .insert(insert)
       .select('id')
       .single();
   return (row as Map<String, dynamic>)['id'] as String;

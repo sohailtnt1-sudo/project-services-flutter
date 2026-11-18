@@ -71,7 +71,11 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   trailing: Text(formatRs(s.basePrice),
                       style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.teal)),
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ProvidersScreen(service: s, city: widget.city),
+                    builder: (_) => ProvidersScreen(
+                      service: s,
+                      city: widget.city,
+                      categorySlug: widget.category.slug,
+                    ),
                   )),
                 ),
               );

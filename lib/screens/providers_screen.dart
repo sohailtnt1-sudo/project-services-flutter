@@ -9,7 +9,14 @@ import 'booking_screen.dart';
 class ProvidersScreen extends StatefulWidget {
   final ServiceItem service;
   final String city;
-  const ProvidersScreen({super.key, required this.service, this.city = kDefaultCity});
+  // Category slug, threaded to the booking screen so it can show the
+  // delivery fields for the delivery category.
+  final String? categorySlug;
+  const ProvidersScreen(
+      {super.key,
+      required this.service,
+      this.city = kDefaultCity,
+      this.categorySlug});
   @override
   State<ProvidersScreen> createState() => _ProvidersScreenState();
 }
@@ -114,7 +121,13 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           ],
                         ),
                         onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => BookingScreen(service: s, provider: p, price: price, city: widget.city),
+                          builder: (_) => BookingScreen(
+                            service: s,
+                            provider: p,
+                            price: price,
+                            city: widget.city,
+                            categorySlug: widget.categorySlug,
+                          ),
                         )),
                       ),
                     );
@@ -129,7 +142,13 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
               width: double.infinity,
               child: OutlinedButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => BookingScreen(service: s, provider: null, price: s.basePrice, city: widget.city),
+                  builder: (_) => BookingScreen(
+                    service: s,
+                    provider: null,
+                    price: s.basePrice,
+                    city: widget.city,
+                    categorySlug: widget.categorySlug,
+                  ),
                 )),
                 child: const Text('Book without choosing a technician'),
               ),

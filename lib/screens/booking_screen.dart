@@ -18,12 +18,18 @@ class BookingScreen extends StatefulWidget {
   // The customer's currently selected city (threaded from the Home /
   // providers flow) — the city field defaults to it, not to Lahore.
   final String city;
+  // Category slug of the service, when the caller knows it (threaded
+  // from ServicesScreen → ProvidersScreen). When null the screen
+  // resolves it once via fetchCategorySlugForService — the delivery
+  // fields gate on this slug (kDeliveryCategorySlug).
+  final String? categorySlug;
   const BookingScreen(
       {super.key,
       required this.service,
       required this.provider,
       required this.price,
-      this.city = kDefaultCity});
+      this.city = kDefaultCity,
+      this.categorySlug});
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
@@ -32,6 +38,12 @@ class _BookingScreenState extends State<BookingScreen> {
   final _description = TextEditingController();
   final _address = TextEditingController();
   late final _city = TextEditingController(text: widget.city);
+  // Delivery on Demand fields (mirror the website booking form):
+  // pickup shop name + pickup address (+ optional pin) + estimated
+  // item cost. Only shown for the delivery category.
+  final _pickupShop = TextEditingController();
+  final _pickupAddress = TextEditingController();
+  final _itemCost = TextEditingController();
   DateTime _date = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _time = const TimeOfDay(hour: 18, minute: 0);
   final List<XFile> _photos = [];
@@ -41,12 +53,45 @@ class _BookingScreenState extends State<BookingScreen> {
   // Optional map pin from PinPickerScreen — passed to createBooking
   // as latitude/longitude. Booking without a pin works as before.
   LatLng? _pickedPoint;
+  // Optional pickup pin (delivery only): the shop the rider collects
+  // from. Separate from the customer's delivery-address pin above.
+  LatLng? _pickupPoint;
+  String? _categorySlug;
+  num? _lastItemCostShown;
+
+  @override
+  void initState() {
+    super.initState();
+    _categorySlug = widget.categorySlug;
+    if (_categorySlug == null) {
+      // Category was not threaded through (e.g. the provider sheet on
+      // Home) — resolve it once; the delivery fields appear when it
+      // comes back as the delivery category.
+      fetchCategorySlugForService(widget.service.id).then((slug) {
+        if (!mounted || slug == _categorySlug) return;
+        setState(() => _categorySlug = slug);
+      }).catchError((_) {});
+    }
+    // Keep the delivery-fee summary live as the item cost is typed.
+    _itemCost.addListener(() {
+      final parsed = num.tryParse(_itemCost.text.trim());
+      if (parsed != _lastItemCostShown) {
+        _lastItemCostShown = parsed;
+        if (mounted) setState(() {});
+      }
+    });
+  }
+
+  bool get _isDelivery => _categorySlug == kDeliveryCategorySlug;
 
   @override
   void dispose() {
     _description.dispose();
     _address.dispose();
     _city.dispose();
+    _pickupShop.dispose();
+    _pickupAddress.dispose();
+    _itemCost.dispose();
     super.dispose();
   }
 
@@ -101,9 +146,37 @@ class _BookingScreenState extends State<BookingScreen> {
     });
   }
 
+  Future<void> _pickPickupOnMap() async {
+    final city = _city.text.trim();
+    final result = await Navigator.of(context).push<PinResult>(
+      MaterialPageRoute(
+        builder: (_) => PinPickerScreen(
+          city: city.isEmpty ? widget.city : city,
+          initialPoint: _pickupPoint,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _pickupPoint = result.point;
+      // The reverse-geocoded shop address fills the pickup field; the
+      // customer can still edit it (shop name, floor, landmark).
+      if (result.addressText.isNotEmpty) {
+        _pickupAddress.text = result.addressText;
+      }
+    });
+  }
+
   Future<void> _confirm() async {
     if (_description.text.trim().isEmpty) {
-      setState(() => _error = 'Please describe the problem.');
+      setState(() => _error = _isDelivery
+          ? 'Please say what the rider should fetch.'
+          : 'Please describe the problem.');
+      return;
+    }
+    if (_isDelivery && _pickupAddress.text.trim().isEmpty) {
+      setState(() => _error =
+          'Please add the pickup address — the shop or place the rider should collect the items from.');
       return;
     }
     if (_address.text.trim().isEmpty) {
@@ -116,6 +189,7 @@ class _BookingScreenState extends State<BookingScreen> {
     });
     try {
       final scheduledAt = DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
+      final itemCostNum = num.tryParse(_itemCost.text.trim());
       final bookingId = await createBooking(
         serviceId: widget.service.id,
         providerId: widget.provider?.id,
@@ -127,6 +201,11 @@ class _BookingScreenState extends State<BookingScreen> {
         commissionAmount: _commission,
         latitude: _pickedPoint?.latitude,
         longitude: _pickedPoint?.longitude,
+        pickupShopName: _isDelivery ? _pickupShop.text : null,
+        pickupAddress: _isDelivery ? _pickupAddress.text : null,
+        pickupLatitude: _isDelivery ? _pickupPoint?.latitude : null,
+        pickupLongitude: _isDelivery ? _pickupPoint?.longitude : null,
+        itemCost: _isDelivery ? itemCostNum : null,
       );
       if (_photos.isNotEmpty) {
         final files = _photos.map((x) => File(x.path)).toList();
@@ -222,13 +301,16 @@ class _BookingScreenState extends State<BookingScreen> {
                 ),
               ),
             const SizedBox(height: 16),
-            const Text('Describe the problem', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(_isDelivery ? 'What should the rider fetch?' : 'Describe the problem',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             TextField(
               controller: _description,
               maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'e.g. The ceiling fan makes a loud noise and runs slowly.',
+              decoration: InputDecoration(
+                hintText: _isDelivery
+                    ? 'e.g. Panadol tablets from the pharmacy, 1 kg tomatoes.'
+                    : 'e.g. The ceiling fan makes a loud noise and runs slowly.',
               ),
             ),
             const SizedBox(height: 16),
@@ -274,6 +356,61 @@ class _BookingScreenState extends State<BookingScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            if (_isDelivery) ...[
+              const Text('Pickup details', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              const Text('Where should the rider collect the items from?',
+                  style: TextStyle(color: AppColors.inkSoft)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _pickupShop,
+                decoration: const InputDecoration(
+                  labelText: 'Pickup shop name',
+                  hintText: 'Example: Al-Shifa Pharmacy, Main Bazaar',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _pickupAddress,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Pickup address',
+                  hintText: 'Shop 4, Main Bazaar Road',
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _pickPickupOnMap,
+                icon: const Icon(Icons.map),
+                label: const Text('Pick pickup on map'),
+              ),
+              if (_pickupPoint != null) ...[
+                const SizedBox(height: 8),
+                Chip(
+                  avatar: const Icon(Icons.location_on,
+                      size: 16, color: AppColors.teal),
+                  label: Text(
+                    'Pickup pinned: ${_pickupPoint!.latitude.toStringAsFixed(2)}, '
+                    '${_pickupPoint!.longitude.toStringAsFixed(2)}',
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _itemCost,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Estimated item cost (Rs.) — optional',
+                  hintText: 'Example: 850',
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'An estimate helps the rider — you pay the actual shop price in cash when the rider arrives.',
+                style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+              ),
+              const SizedBox(height: 16),
+            ],
             const Text('Date & time', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Row(
@@ -296,11 +433,16 @@ class _BookingScreenState extends State<BookingScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            const Text('Address', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(_isDelivery ? 'Delivery address' : 'Address',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             TextField(
               controller: _address,
-              decoration: const InputDecoration(hintText: 'House, street, area'),
+              decoration: InputDecoration(
+                hintText: _isDelivery
+                    ? 'House, street, area — where the rider delivers'
+                    : 'House, street, area',
+              ),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
@@ -333,6 +475,10 @@ class _BookingScreenState extends State<BookingScreen> {
                   children: [
                     _priceRow('Job price', formatRs(_jobValue)),
                     _priceRow('Platform fee (15%)', formatRs(_commission)),
+                    if (_isDelivery &&
+                        (num.tryParse(_itemCost.text.trim()) ?? 0) > 0)
+                      _priceRow('Estimated item cost (cash)',
+                          formatRs(num.parse(_itemCost.text.trim()))),
                     const Divider(),
                     _priceRow('You pay (cash on delivery)', formatRs(_jobValue), bold: true),
                     _priceRow('Technician receives', formatRs(_techReceives)),
@@ -353,10 +499,12 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Cash on delivery. You pay the technician after the work is done.',
+            Text(
+              _isDelivery
+                  ? 'Cash on delivery. Item cost is paid in cash to the rider, plus the delivery fee above.'
+                  : 'Cash on delivery. You pay the technician after the work is done.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+              style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
             ),
           ],
         ),

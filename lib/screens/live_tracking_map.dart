@@ -103,10 +103,10 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
     }
   }
 
-  void _subscribe() {
-    final providerId = widget.booking.providerId;
-    if (providerId == null || _channel != null) return;
-    _channel = subscribeToProviderLocation(providerId, (loc) {
+  void _subscribe([String? providerId]) {
+    final id = providerId ?? widget.booking.providerId;
+    if (id == null || _channel != null) return;
+    _channel = subscribeToProviderLocation(id, (loc) {
       if (!mounted) return;
       setState(() => _providerLoc = loc);
       if (!_centered) {
@@ -145,7 +145,16 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
       final match =
           bookings.where((b) => b.id == widget.booking.id);
       if (match.isEmpty || !mounted) return;
-      final status = match.first.status;
+      final fresh = match.first;
+      // Provider assigned after this screen opened (or the row was
+      // momentarily absent): subscribe now so the rider's live
+      // position appears instead of "Locating technician…" forever.
+      if (fresh.providerId != null &&
+          _channel == null &&
+          isLiveTrackingActive(fresh.status)) {
+        _subscribe(fresh.providerId);
+      }
+      final status = fresh.status;
       if (status == _currentStatus) return;
       setState(() => _currentStatus = status);
       if (!isLiveTrackingActive(status)) {

@@ -4,9 +4,13 @@
 // customer while the job is active.
 //
 // Privacy: live location is published ONLY while this job is active
-// (accepted / confirmed / on_the_way / in_progress). Sharing stops and
-// the location row is deleted on dispose and when the job reaches a
-// terminal status (handled in _JobTile._setStatus as well).
+// (accepted / confirmed / on_the_way / in_progress). The location row
+// is deleted ONLY on an explicit "Stop live location" tap, when the job
+// reaches a terminal status (handled in _JobTile._setStatus), or when
+// the provider goes offline (server-side trigger, migration 007).
+// Leaving this screen must NOT delete the row — the customer would
+// otherwise lose the rider the moment the provider checks another
+// screen (that was the live-location bug of 18 Nov 2026).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -26,6 +30,41 @@ const Set<String> kActiveJobStatuses = {
   'on_the_way',
   'in_progress',
 };
+
+/// Shown when the booking genuinely has no address at all — no pin and
+/// no address text. It must NEVER appear when an address exists: the
+/// 18 Nov 2026 bug showed this message while the pin existed in the
+/// database, only because RLS blocked the provider from reading it
+/// (fixed by migration 009).
+const String kNoPinMessage =
+    'Customer ne map pin nahi lagaya — address text se jayein';
+
+/// Why live-location sharing is ending. The location row may be
+/// deleted for every reason EXCEPT leaving the route screen: the row
+/// is the customer's only view of the rider while the job is active.
+enum LocationStopReason { explicitStop, jobTerminal, wentOffline, leftRouteScreen }
+
+/// Pure policy (unit-tested): the live-location row is deleted on an
+/// explicit stop, a terminal job status, or going offline — never just
+/// because the provider left the route screen.
+bool shouldDeleteLocationRow(LocationStopReason reason) =>
+    reason != LocationStopReason.leftRouteScreen;
+
+/// Pure helper (unit-tested): the Nominatim queries to try, in order,
+/// when geocoding an address text. First the raw text; if a city is
+/// known and not already in the text, retry with the city appended
+/// (e.g. "Askari Mall, Airport Road" → "Askari Mall, Airport Road,
+/// Quetta") — bare shop/street names often only resolve with the city.
+List<String> geocodeQueryCandidates(String text, String? city) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return [];
+  final cityName = (city ?? '').trim();
+  if (cityName.isEmpty) return [trimmed];
+  if (trimmed.toLowerCase().contains(cityName.toLowerCase())) {
+    return [trimmed];
+  }
+  return [trimmed, '$trimmed, $cityName'];
+}
 
 /// Pure route-resolution helper (unit-tested in test/route_fallback_test.dart):
 /// a real OSRM route wins; when fetchRoute returned null (or the route has
@@ -56,7 +95,7 @@ const Set<String> kActiveJobStatuses = {
   required ServiceAddress? address,
   required LatLng? pickupPoint,
 }) {
-  const noPin = 'Customer ne map pin nahi lagaya — address text se jayein';
+  const noPin = kNoPinMessage;
   final pickupLabel = (booking.pickupAddress != null &&
           booking.pickupAddress!.trim().isNotEmpty)
       ? booking.pickupAddress!.trim()
@@ -103,6 +142,7 @@ class JobRouteScreen extends StatefulWidget {
 class _JobRouteScreenState extends State<JobRouteScreen> {
   final MapController _mapController = MapController();
   final MapApi _mapApi = MapApi();
+  final _search = TextEditingController();
 
   ServiceAddress? _address;
   LatLng? _pickupPoint; // Delivery bookings: resolved pickup coordinates.
@@ -111,6 +151,16 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
   bool _routeFallback = false;
   bool _loading = true;
   String? _loadError;
+
+  // Manual destination from the map search below: when the automatic
+  // resolution fails (or the rider wants a different place), the
+  // provider searches a place and taps it — that becomes the
+  // destination for this screen session.
+  LatLng? _searchedDestination;
+  String? _searchedLabel;
+  List<PlaceSuggestion> _suggestions = [];
+  bool _searching = false;
+  String? _searchError;
 
   bool _sharing = false;
   bool _permissionOk = true;
@@ -123,13 +173,20 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
 
   /// Resolved destination for the current leg: the pickup point for a
   /// delivery booking that has not been picked up yet, else the
-  /// customer's address (see resolveRouteDestination).
+  /// customer's address (see resolveRouteDestination). A place the
+  /// provider picked from the map search overrides the automatic one.
   ({LatLng? destination, String label, bool isPickup})
-      get _resolvedDestination => resolveRouteDestination(
-            booking: widget.booking,
-            address: _address,
-            pickupPoint: _pickupPoint,
-          );
+      get _resolvedDestination => _searchedDestination != null
+          ? (
+              destination: _searchedDestination,
+              label: _searchedLabel ?? 'Searched place',
+              isPickup: false,
+            )
+          : resolveRouteDestination(
+              booking: widget.booking,
+              address: _address,
+              pickupPoint: _pickupPoint,
+            );
 
   bool get _hasDestinationCoords => _resolvedDestination.destination != null;
 
@@ -148,21 +205,34 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
     _load();
   }
 
+  /// Geocode a pickup address text: raw text first, then with the
+  /// booking city appended (see geocodeQueryCandidates). Returns null
+  /// when Nominatim finds nothing — the caller keeps the address text
+  /// as the label so the rider can still navigate by it.
+  Future<LatLng?> _geocodePickup(String text, String? city) async {
+    for (final query in geocodeQueryCandidates(text, city)) {
+      final hits = await _mapApi.searchPlaces(query);
+      if (hits.isNotEmpty) {
+        return LatLng(hits.first.latitude, hits.first.longitude);
+      }
+    }
+    return null;
+  }
+
   Future<void> _load() async {
     try {
       final address = await fetchBookingAddress(widget.booking.id);
       // Delivery bookings: resolve the pickup point — coordinates from
       // the booking row when the customer dropped a pin, else geocode
-      // the pickup address text (Nominatim search, Pakistan).
+      // the pickup address text (Nominatim search, Pakistan; city
+      // appended as a second try when the raw text finds nothing).
       LatLng? pickupPoint;
       final b = widget.booking;
       if (b.pickupLatitude != null && b.pickupLongitude != null) {
         pickupPoint = LatLng(b.pickupLatitude!, b.pickupLongitude!);
       } else if (b.pickupAddress != null && b.pickupAddress!.trim().isNotEmpty) {
-        final hits = await _mapApi.searchPlaces(b.pickupAddress!);
-        if (hits.isNotEmpty) {
-          pickupPoint = LatLng(hits.first.latitude, hits.first.longitude);
-        }
+        pickupPoint =
+            await _geocodePickup(b.pickupAddress!, address?.city);
       }
       var myPos = await getCurrentPosition();
       myPos ??= _fallbackCenter(address?.city);
@@ -279,14 +349,62 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
     }
   }
 
+  /// Search places (Nominatim, Pakistan) for the map search bar.
+  /// Suggestions appear under the field; tapping one makes it the
+  /// destination for this screen session and fetches the route.
+  Future<void> _searchPlaces() async {
+    final q = _search.text.trim();
+    if (q.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _searching = true;
+      _searchError = null;
+    });
+    final results = await _mapApi.searchPlaces(q);
+    if (!mounted) return;
+    setState(() {
+      _searching = false;
+      _suggestions = results;
+      if (results.isEmpty) {
+        _searchError = 'No places found — try another search.';
+      }
+    });
+  }
+
+  void _useSearchedPlace(PlaceSuggestion s) {
+    setState(() {
+      _searchedDestination = LatLng(s.latitude, s.longitude);
+      _searchedLabel = s.displayName;
+      _suggestions = [];
+      _searchError = null;
+      _route = null;
+      _routeFallback = false;
+    });
+    _mapController.move(LatLng(s.latitude, s.longitude), 14);
+    unawaited(_fetchRoute());
+  }
+
+  void _clearSearchedPlace() {
+    setState(() {
+      _searchedDestination = null;
+      _searchedLabel = null;
+      _route = null;
+      _routeFallback = false;
+    });
+    unawaited(_fetchRoute());
+  }
+
   /// Stop the position stream and delete the live-location row.
-  /// Never throws; safe to call from dispose.
+  /// Only for the explicit "Stop live location" tap — see
+  /// shouldDeleteLocationRow: leaving the screen must NOT delete the
+  /// row (use _pauseSharingStream for that). Never throws.
   Future<void> _stopSharing() async {
     await _posSub?.cancel();
     _posSub = null;
     if (_sharing) {
       setState(() => _sharing = false);
     }
+    if (!shouldDeleteLocationRow(LocationStopReason.explicitStop)) return;
     try {
       await clearMyProviderLocation();
     } catch (_) {
@@ -294,12 +412,26 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
     }
   }
 
+  /// Pause the position stream when leaving this screen WITHOUT
+  /// deleting the live-location row: the customer keeps seeing the
+  /// rider's last-known position while the job is active, and sharing
+  /// resumes automatically when the screen is opened again. The row is
+  /// deleted only by an explicit stop, a terminal job status, or going
+  /// offline (migration 007 trigger).
+  Future<void> _pauseSharingStream() async {
+    await _posSub?.cancel();
+    _posSub = null;
+    // Deliberately NO clearMyProviderLocation() here — see
+    // shouldDeleteLocationRow(LocationStopReason.leftRouteScreen).
+  }
+
   @override
   void dispose() {
-    // Fire-and-forget: the location row must be removed when the
-    // provider leaves this screen, even mid-job.
-    unawaited(_stopSharing());
+    // Cancel the GPS stream only. The location row stays: the job is
+    // still active and the customer must keep seeing the rider.
+    unawaited(_pauseSharingStream());
     _mapController.dispose();
+    _search.dispose();
     super.dispose();
   }
 
@@ -315,7 +447,14 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
         ? resolveRoutePoints(route: _route, from: _myPos!, to: _destination!)
         : null;
     final showFallbackNote =
-        _routeFallback || !_hasDestinationCoords;
+        _hasDestinationCoords && _routeFallback;
+    // No coordinates at all: no line is drawn, so do NOT claim a
+    // straight line is shown. The address text is already in the
+    // header card above — this note only says to navigate by it, and
+    // only when there IS an address text (otherwise the header already
+    // says the customer left no pin/address).
+    final showNoCoordsNote =
+        !_hasDestinationCoords && _destinationLabel != kNoPinMessage;
     return Scaffold(
       appBar: AppBar(title: const Text('Job route')),
       body: _loading
@@ -390,6 +529,88 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      // ---- Map search: when the automatic destination
+                      // is missing or wrong, the rider searches a place
+                      // (e.g. "Askari Mall") and taps it — that becomes
+                      // the destination and the route is fetched.
+                      Material(
+                        elevation: 2,
+                        borderRadius: BorderRadius.circular(12),
+                        child: TextField(
+                          controller: _search,
+                          decoration: InputDecoration(
+                            hintText: 'Search a place — Askari Mall…',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_searchedDestination != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    tooltip: 'Clear searched place',
+                                    onPressed: _clearSearchedPlace,
+                                  ),
+                                _searching
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        ),
+                                      )
+                                    : IconButton(
+                                        icon:
+                                            const Icon(Icons.arrow_forward),
+                                        onPressed: _searchPlaces,
+                                      ),
+                              ],
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12),
+                          ),
+                          onSubmitted: (_) => _searchPlaces(),
+                        ),
+                      ),
+                      if (_searchError != null)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(_searchError!,
+                              style:
+                                  const TextStyle(color: AppColors.red)),
+                        ),
+                      if (_suggestions.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _suggestions.length,
+                            itemBuilder: (context, i) {
+                              final s = _suggestions[i];
+                              return ListTile(
+                                leading: const Icon(Icons.location_on,
+                                    color: AppColors.teal),
+                                title: Text(s.displayName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis),
+                                onTap: () => _useSearchedPlace(s),
+                              );
+                            },
+                          ),
+                        ),
                       const SizedBox(height: 12),
                       // ---- Map ----
                       ClipRRect(
@@ -500,6 +721,14 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                           padding: EdgeInsets.only(top: 8),
                           child: Text(
                             'Route nahi mil saka — seedhi line dikhayi ja rahi hai',
+                            style: TextStyle(color: AppColors.amberDark),
+                          ),
+                        ),
+                      if (showNoCoordsNote)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Is address ke coordinates nahi hain — upar diya gaya address parh kar jayein',
                             style: TextStyle(color: AppColors.amberDark),
                           ),
                         ),
