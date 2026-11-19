@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Signing — never commit the upload keystore or its passwords
+key.properties
+*.jks
