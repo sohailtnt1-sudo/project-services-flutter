@@ -56,6 +56,16 @@ Future<void> ensureProfile({
   });
 }
 
+/// Update the signed-in user's own mobile number on their profiles row.
+/// Callers must pass an already-normalized number (see
+/// normalizePakistaniMobile in models.dart). RLS policy
+/// "profiles_update_own" allows exactly this. Throws when the number is
+/// already used by another account (profiles.phone is UNIQUE).
+Future<void> updateMyPhone(String normalizedPhone) async {
+  final user = db.auth.currentUser!;
+  await db.from('profiles').update({'phone': normalizedPhone}).eq('id', user.id);
+}
+
 /// Cities the app serves — same 6 as the website header selector.
 const List<String> kServiceCities = [
   'Lahore',
@@ -179,7 +189,7 @@ Future<List<Provider>> fetchProvidersForService(String serviceId, {String? city}
     final userId = r['user_id'] as String;
     final prof = await db
         .from('profiles')
-        .select('full_name, email, phone')
+        .select('full_name, email')
         .eq('id', userId)
         .maybeSingle() as Map<String, dynamic>?;
     providers.add(Provider(
@@ -189,7 +199,9 @@ Future<List<Provider>> fetchProvidersForService(String serviceId, {String? city}
           ? (prof!['full_name'] as String)
           : 'Verified technician',
       email: prof?['email'] as String?,
-      phone: prof?['phone'] as String?,
+      // NOTE: provider phone is deliberately NOT fetched here — it is
+      // never shown to customers (anti-bypass: customers must book
+      // through the platform, not call the provider directly).
       bio: r['bio'] as String?,
       city: r['city'] as String?,
       experienceYears: (r['experience_years'] as num?)?.toInt() ?? 0,
@@ -216,7 +228,7 @@ Future<List<Provider>> fetchApprovedProviders({int limit = 6, String? city}) asy
     final userId = r['user_id'] as String;
     final prof = await db
         .from('profiles')
-        .select('full_name, email, phone')
+        .select('full_name, email')
         .eq('id', userId)
         .maybeSingle() as Map<String, dynamic>?;
     providers.add(Provider(
@@ -226,7 +238,8 @@ Future<List<Provider>> fetchApprovedProviders({int limit = 6, String? city}) asy
           ? (prof!['full_name'] as String)
           : 'Verified technician',
       email: prof?['email'] as String?,
-      phone: prof?['phone'] as String?,
+      // NOTE: provider phone is deliberately NOT fetched here — see
+      // the comment in fetchProvidersForService above.
       bio: r['bio'] as String?,
       city: r['city'] as String?,
       experienceYears: (r['experience_years'] as num?)?.toInt() ?? 0,

@@ -332,6 +332,26 @@ String normalizeCnic(String raw) => raw.replaceAll(RegExp(r'\D'), '');
 
 bool isValidCnic(String raw) => normalizeCnic(raw).length == 13;
 
+/// Pakistani mobile number: 11 digits starting with 03 (e.g.
+/// 0300-1234567). Accepts spaces/dashes and the +92 form
+/// (+92 300 1234567), which normalizes to 03001234567.
+/// Mirrors the website (src/lib/provider.ts).
+String normalizePakistaniMobile(String raw) {
+  var digits = raw.replaceAll(RegExp(r'\D'), '');
+  // International form: 0092 300 … (14 digits) or +92 300 … (12 digits).
+  if (digits.startsWith('0092') && digits.length == 14) {
+    digits = '0${digits.substring(4)}';
+  } else if (digits.startsWith('92') && digits.length == 12) {
+    digits = '0${digits.substring(2)}';
+  }
+  return digits;
+}
+
+bool isValidPakistaniMobile(String raw) {
+  final digits = normalizePakistaniMobile(raw);
+  return digits.length == 11 && digits.startsWith('03');
+}
+
 /// A provider's live position (migration 007, table provider_locations).
 /// One row per provider; visible to customers only while the provider is
 /// online + approved + available (enforced server-side by RLS and by the

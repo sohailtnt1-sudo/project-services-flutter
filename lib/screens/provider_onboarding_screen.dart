@@ -11,6 +11,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../l10n/language_toggle.dart';
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
@@ -52,6 +54,7 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
 
   int _step = 1;
   final _cnic = TextEditingController();
+  final _mobile = TextEditingController();
   final _city = TextEditingController();
   final _experience = TextEditingController(text: '1');
   final _bio = TextEditingController();
@@ -69,12 +72,16 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
   @override
   void initState() {
     super.initState();
+    // Prefill the mobile number from the account profile (e.g. Humaiyo
+    // already has 03063833728 saved from sign-up).
+    _mobile.text = widget.profile.phone ?? '';
     _load();
   }
 
   @override
   void dispose() {
     _cnic.dispose();
+    _mobile.dispose();
     _city.dispose();
     _experience.dispose();
     _bio.dispose();
@@ -135,6 +142,10 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
       setState(() => _error = 'Please enter a valid 13-digit CNIC number (e.g. 35202-1234567-1).');
       return;
     }
+    if (!isValidPakistaniMobile(_mobile.text)) {
+      setState(() => _error = tr('mobileInvalid'));
+      return;
+    }
     if (_city.text.trim().isEmpty) {
       setState(() => _error = 'Please enter your city / area.');
       return;
@@ -163,6 +174,10 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
         bio: _bio.text.trim().isEmpty ? null : _bio.text.trim(),
         city: _city.text.trim(),
       );
+      // Mobile number lives on profiles.phone (never on
+      // provider_profiles) — visible to the provider himself and the
+      // admin only, never to customers.
+      await updateMyPhone(normalizePakistaniMobile(_mobile.text));
       await saveProviderSkills(
         prof['id'] as String,
         selected
@@ -258,11 +273,11 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
   static String _docLabel(String type) {
     switch (type) {
       case 'cnic_front':
-        return 'CNIC — front';
+        return tr('cnicFront');
       case 'cnic_back':
-        return 'CNIC — back';
+        return tr('cnicBack');
       case 'selfie':
-        return 'Selfie';
+        return tr('selfie');
       default:
         return type;
     }
@@ -285,7 +300,8 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_existing != null ? 'Update your registration' : 'Register as a provider'),
+        title: Text(_existing != null ? tr('updateRegistration') : tr('registerProvider')),
+        actions: const [LanguageToggle()],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -308,17 +324,16 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Tell customers what you do, where you work and what you charge. '
-                        'Our admin team verifies your CNIC and selfie before you can take jobs.',
-                        style: TextStyle(color: AppColors.inkSoft),
+                      Text(
+                        tr('onboardingIntro'),
+                        style: const TextStyle(color: AppColors.inkSoft),
                       ),
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          Expanded(child: _stepChip(1, 'Your details & services', _step == 1)),
+                          Expanded(child: _stepChip(1, tr('yourDetails'), _step == 1)),
                           const SizedBox(width: 8),
-                          Expanded(child: _stepChip(2, 'CNIC & selfie', _step == 2)),
+                          Expanded(child: _stepChip(2, tr('cnicSelfieStep'), _step == 2)),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -359,17 +374,19 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
         TextField(
           controller: _cnic,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'CNIC number',
+          decoration: InputDecoration(
+            labelText: tr('cnicNumber'),
             hintText: '35202-1234567-1',
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 12),
+        MobileNumberField(controller: _mobile),
+        const SizedBox(height: 12),
         TextField(
           controller: _city,
-          decoration: const InputDecoration(
-            labelText: 'City / area',
+          decoration: InputDecoration(
+            labelText: tr('cityArea'),
             hintText: 'Lahore — Gulberg',
             border: OutlineInputBorder(),
           ),
@@ -378,9 +395,9 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
         TextField(
           controller: _experience,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Years of experience',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: tr('experienceYears'),
+            border: const OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 12),
@@ -388,15 +405,15 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
           controller: _bio,
           maxLines: 3,
           maxLength: 500,
-          decoration: const InputDecoration(
-            labelText: 'Short bio',
+          decoration: InputDecoration(
+            labelText: tr('shortBio'),
             hintText: 'Example: Licensed electrician with 5 years of experience in home wiring, fans and fittings.',
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 16),
-        const Text('Services you offer — set your own charge for each',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(tr('servicesOffer'),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         const Text(
           'You set your own charges. Platform guideline: between 50% and 200% of the base price shown. '
           'The platform commission is 15% of the job value.',
@@ -438,9 +455,9 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
                         if (choice.selected)
                           TextField(
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Your charge (Rs.)',
-                              border: OutlineInputBorder(),
+                            decoration: InputDecoration(
+                              labelText: tr('yourCharge'),
+                              border: const OutlineInputBorder(),
                             ),
                             controller: TextEditingController(text: choice.price)
                               ..selection = TextSelection.fromPosition(
@@ -472,10 +489,10 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
           child: ElevatedButton(
             onPressed: _saving ? null : _saveStep1,
             child: Text(_saving
-                ? 'Saving…'
+                ? tr('saving')
                 : _existing != null
-                    ? 'Save changes & continue to documents'
-                    : 'Save & continue to documents'),
+                    ? tr('saveChangesContinue')
+                    : tr('saveContinue')),
           ),
         ),
       ],
@@ -486,12 +503,11 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Upload your CNIC & selfie',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        const Text(
-          'Our admin team checks your CNIC and selfie before approving your account. '
-          'You can start taking jobs once you are approved.',
-          style: TextStyle(color: AppColors.inkSoft),
+        Text(tr('uploadCnicSelfie'),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        Text(
+          tr('uploadCnicSelfieHint'),
+          style: const TextStyle(color: AppColors.inkSoft),
         ),
         const SizedBox(height: 16),
         Row(
@@ -501,10 +517,10 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
               child: TextField(
                 controller: _cnic,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'CNIC number',
+                decoration: InputDecoration(
+                  labelText: tr('cnicNumber'),
                   hintText: '35202-1234567-1',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
               ),
             ),
@@ -512,14 +528,14 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
             ElevatedButton(onPressed: _saveCnicNumber, child: const Text('Save')),
           ],
         ),
-        const Text(
-          'Your CNIC number is only visible to you and our admin team — never to customers.',
-          style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+        Text(
+          tr('cnicPrivateNote'),
+          style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
         ),
         if (_cnicSaved)
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
-            child: Text('CNIC number saved.', style: TextStyle(color: AppColors.teal)),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(tr('cnicSaved'), style: const TextStyle(color: AppColors.teal)),
           ),
         const SizedBox(height: 16),
         _docTile('cnic_front'),
@@ -538,15 +554,14 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
             child: Text(_docNotice!, style: const TextStyle(color: AppColors.teal)),
           ),
         const SizedBox(height: 8),
-        const Row(
+        Row(
           children: [
-            Icon(Icons.shield_outlined, size: 16, color: AppColors.teal),
-            SizedBox(width: 6),
+            const Icon(Icons.shield_outlined, size: 16, color: AppColors.teal),
+            const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Your CNIC photos and selfie are only visible to you and our admin team. '
-                'They are used only to verify your identity before you can take jobs.',
-                style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+                tr('docsPrivateNote'),
+                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
               ),
             ),
           ],
@@ -557,7 +572,7 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
           child: ElevatedButton.icon(
             onPressed: () => Navigator.of(context).pop(true),
             icon: const Icon(Icons.check),
-            label: const Text('Done — go to my dashboard'),
+            label: Text(tr('doneDashboard')),
           ),
         ),
         const SizedBox(height: 8),
@@ -565,7 +580,7 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
           width: double.infinity,
           child: OutlinedButton(
             onPressed: () => setState(() => _step = 1),
-            child: const Text('Back to details'),
+            child: Text(tr('backToDetails')),
           ),
         ),
       ],
@@ -641,6 +656,27 @@ class _ProviderOnboardingScreenState extends State<ProviderOnboardingScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The Step 1 mobile-number field, extracted so it can be widget-tested
+/// in isolation (the full onboarding screen needs live Supabase to
+/// load). Label + hint come from the language strings.
+class MobileNumberField extends StatelessWidget {
+  final TextEditingController controller;
+  const MobileNumberField({super.key, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.phone,
+      decoration: InputDecoration(
+        labelText: tr('mobileNumber'),
+        hintText: '0300-1234567',
+        border: const OutlineInputBorder(),
       ),
     );
   }

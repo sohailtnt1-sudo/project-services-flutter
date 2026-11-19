@@ -43,6 +43,11 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
   bool _routeFallback = false;
   bool _loading = true;
   bool _centered = false;
+  // GPS lookup runs in parallel with _load(); the map centres on the
+  // best known point once BOTH the data is in and the map is ready.
+  LatLng? _gpsPoint;
+  bool _loadDone = false;
+  bool _mapReady = false;
 
   RealtimeChannel? _channel;
   Timer? _pollTimer;
@@ -62,19 +67,95 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
 
   bool get _hasDestinationCoords => _destination != null;
 
+  /// First centre for the map widget itself. Before _load() finishes
+  /// nothing is known, so this is the neutral Pakistan overview —
+  /// NEVER a hardcoded city (the old code opened every tracking map
+  /// on Lahore). _maybeCenterAfterLoad() moves the map to the real
+  /// centre as soon as the data is in.
   LatLng get _initialCenter =>
-      _providerPoint ?? _destination ?? kCityCenters['Lahore']!;
+      resolveInitialCenter(
+        providerPoint: _providerPoint,
+        destination: _destination,
+        gpsPoint: _gpsPoint,
+        city: _address?.city,
+      ) ??
+      kPakistanOverview;
+
+  double get _initialZoom => _initialCenter == kPakistanOverview ? 6 : 13;
 
   @override
   void initState() {
     super.initState();
     _currentStatus = widget.booking.status;
     _load();
+    _locateGps();
     if (isLiveTrackingActive(widget.booking.status) &&
         widget.booking.providerId != null) {
       _subscribe();
     }
     _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) => _pollStatus());
+  }
+
+  /// Customer's own GPS (6s timeout, same pattern as the home map).
+  /// Never throws; a null result just means "no GPS available".
+  Future<void> _locateGps() async {
+    final gps = await getCurrentPosition();
+    if (!mounted || gps == null) return;
+    setState(() => _gpsPoint = gps);
+    _maybeCenterAfterLoad();
+  }
+
+  /// Centre the map once the data is loaded AND the map widget is
+  /// ready. Priority: provider + destination together (fit both in
+  /// view) > provider > destination > GPS > booking city centre.
+  /// Runs at most once — the first Realtime event still centres the
+  /// map when this found nothing to centre on.
+  void _maybeCenterAfterLoad() {
+    if (!_loadDone || !_mapReady || _centered) return;
+    final providerPoint = _providerPoint;
+    final destination = _destination;
+    if (providerPoint != null && destination != null) {
+      _centered = true;
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints([providerPoint, destination]),
+          padding: const EdgeInsets.all(48),
+        ),
+      );
+      return;
+    }
+    final center = resolveInitialCenter(
+      providerPoint: providerPoint,
+      destination: destination,
+      gpsPoint: _gpsPoint,
+      city: _address?.city,
+    );
+    if (center == null) return;
+    _centered = true;
+    final zoom = providerPoint != null || destination != null
+        ? 14.0
+        : _gpsPoint != null
+            ? 13.0
+            : 12.0;
+    _mapController.move(center, zoom);
+  }
+
+  /// My-location button: jump the map to the customer's current GPS.
+  /// A failed/denied lookup shows a short message and never crashes.
+  Future<void> _goToMyLocation() async {
+    final pos = await getCurrentPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Location permission nahi mili — apni location nahi dikhayi ja sakti'),
+        ),
+      );
+      return;
+    }
+    setState(() => _gpsPoint = pos);
+    _mapController.move(pos, 15);
   }
 
   Future<void> _load() async {
@@ -95,11 +176,19 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
       setState(() {
         _address = address;
         _loading = false;
+        _loadDone = true;
       });
+      _maybeCenterAfterLoad();
       await _fetchRoute();
     } catch (_) {
       // Never a blank error screen: show the map with whatever is known.
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadDone = true;
+        });
+        _maybeCenterAfterLoad();
+      }
     }
   }
 
@@ -251,64 +340,87 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
           borderRadius: BorderRadius.circular(16),
           child: SizedBox(
             height: 260,
-            child: FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _initialCenter,
-                initialZoom: 13,
-              ),
+            child: Stack(
               children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.projectservices.app',
-                ),
-                if (resolved != null)
-                  PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: resolved.points,
-                        color: resolved.isFallback
-                            ? AppColors.amber
-                            : AppColors.teal,
-                        strokeWidth: 4,
-                        pattern: resolved.isFallback
-                            ? StrokePattern.dashed(segments: const [8, 6])
-                            : const StrokePattern.solid(),
-                      ),
-                    ],
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: _initialCenter,
+                    initialZoom: _initialZoom,
+                    onMapReady: () {
+                      _mapReady = true;
+                      _maybeCenterAfterLoad();
+                    },
                   ),
-                MarkerLayer(
-                  markers: [
-                    if (providerPoint != null)
-                      Marker(
-                        point: providerPoint,
-                        width: 44,
-                        height: 44,
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: AppColors.teal,
-                            shape: BoxShape.circle,
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.projectservices.app',
+                    ),
+                    if (resolved != null)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: resolved.points,
+                            color: resolved.isFallback
+                                ? AppColors.amber
+                                : AppColors.teal,
+                            strokeWidth: 4,
+                            pattern: resolved.isFallback
+                                ? StrokePattern.dashed(segments: const [8, 6])
+                                : const StrokePattern.solid(),
                           ),
-                          child: const Icon(
-                            Icons.build,
-                            color: Colors.white,
-                            size: 22,
+                        ],
+                      ),
+                    MarkerLayer(
+                      markers: [
+                        if (providerPoint != null)
+                          Marker(
+                            point: providerPoint,
+                            width: 44,
+                            height: 44,
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                color: AppColors.teal,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.build,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    if (destination != null)
-                      Marker(
-                        point: destination,
-                        width: 40,
-                        height: 40,
-                        child: const Icon(
-                          Icons.location_on,
-                          color: AppColors.red,
-                          size: 36,
-                        ),
-                      ),
+                        if (destination != null)
+                          Marker(
+                            point: destination,
+                            width: 40,
+                            height: 40,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: AppColors.red,
+                              size: 36,
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: Colors.white,
+                    shape: const CircleBorder(),
+                    elevation: 2,
+                    child: IconButton(
+                      icon: const Icon(Icons.my_location,
+                          color: AppColors.teal),
+                      tooltip: 'My location',
+                      onPressed: _goToMyLocation,
+                    ),
+                  ),
                 ),
               ],
             ),

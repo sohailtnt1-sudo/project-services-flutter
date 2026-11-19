@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
+import '../l10n/strings.dart';
 
 String _timeLabel(DateTime dt) {
   final now = DateTime.now();
@@ -280,6 +281,27 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
       body: Column(
         children: [
+          // Transparency note: chats may be reviewed by the admin.
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: AppColors.tealLight,
+            child: Row(
+              children: [
+                const Icon(Icons.shield_outlined,
+                    size: 16, color: AppColors.inkSoft),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    tr('chatAdminNote'),
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.inkSoft),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())

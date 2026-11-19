@@ -1,6 +1,8 @@
 // Provider shell: Dashboard | Jobs | Earnings | Profile.
 // One app, provider role — same Supabase backend as the website.
 import 'package:flutter/material.dart';
+import '../l10n/language_toggle.dart';
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
@@ -35,12 +37,12 @@ class _ProviderShellState extends State<ProviderShell> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.teal,
         unselectedItemColor: AppColors.inkSoft,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
-          BottomNavigationBarItem(icon: Icon(Icons.work), label: 'Jobs'),
-          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Messages'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'Earnings'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        items: [
+          BottomNavigationBarItem(icon: const Icon(Icons.dashboard), label: tr('dashboard')),
+          BottomNavigationBarItem(icon: const Icon(Icons.work), label: tr('jobs')),
+          BottomNavigationBarItem(icon: const Icon(Icons.message), label: tr('messages')),
+          BottomNavigationBarItem(icon: const Icon(Icons.account_balance_wallet), label: tr('earnings')),
+          BottomNavigationBarItem(icon: const Icon(Icons.person), label: tr('profile')),
         ],
       ),
     );
@@ -95,7 +97,7 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Provider dashboard')),
+      appBar: AppBar(title: Text(tr('providerDashboard')), actions: const [LanguageToggle()]),
       body: FutureBuilder<Map<String, dynamic>?>(
         future: _provider,
         builder: (context, snap) {
@@ -111,9 +113,8 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'No provider profile yet. Complete your verification in the app '
-                      '(CNIC, selfie, services and charges) — then your dashboard appears here.',
+                    Text(
+                      tr('noProviderProfile'),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
@@ -127,7 +128,7 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                         if (done == true && mounted) setState(_refresh);
                       },
                       icon: const Icon(Icons.verified_user),
-                      label: const Text('Complete verification'),
+                      label: Text(tr('completeVerification')),
                     ),
                   ],
                 ),
@@ -179,21 +180,21 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                         Chip(
                           label: Text(
                             status == 'approved'
-                                ? 'Verified'
+                                ? tr('verified')
                                 : status == 'rejected'
-                                    ? 'Rejected'
-                                    : 'Verification pending',
+                                    ? tr('rejected')
+                                    : tr('verificationPending'),
                           ),
                           backgroundColor: status == 'approved'
                               ? AppColors.tealLight
                               : const Color(0xFFFFF3D6),
                         ),
                         if (status != 'approved')
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              'Your account is under review. You can take jobs once an admin approves your CNIC, selfie and documents.',
-                              style: TextStyle(color: AppColors.inkSoft),
+                              tr('underReview'),
+                              style: const TextStyle(color: AppColors.inkSoft),
                             ),
                           ),
                         if (status != 'approved')
@@ -209,7 +210,7 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                                 if (done == true && mounted) setState(_refresh);
                               },
                               icon: const Icon(Icons.verified_user, size: 18),
-                              label: const Text('Complete / update verification'),
+                              label: Text(tr('updateVerification')),
                             ),
                           ),
                       ],
@@ -221,16 +222,16 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                 const SizedBox(height: 16),
                 Card(
                   child: SwitchListTile(
-                    title: const Text('Available for jobs', style: TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(tr('availableForJobs'), style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(isAvailable
-                        ? 'You are online — customers can book you.'
-                        : 'You are offline — new booking requests will not come to you.'),
+                        ? tr('onlineNote')
+                        : tr('offlineNote')),
                     value: isAvailable,
                     onChanged: _toggling ? null : _toggleAvailability,
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text('Latest jobs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(tr('latestJobs'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 FutureBuilder<List<Booking>>(
                   future: _jobs,
@@ -239,7 +240,7 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final jobs = jsnap.data ?? [];
-                    if (jobs.isEmpty) return const Text('No jobs yet.');
+                    if (jobs.isEmpty) return Text(tr('noJobs'));
                     return Column(
                       children: jobs.take(3).map((b) => _JobTile(booking: b, onChanged: () => setState(_refresh))).toList(),
                     );
@@ -417,7 +418,7 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My jobs')),
+      appBar: AppBar(title: Text(tr('myJobs')), actions: const [LanguageToggle()]),
       body: FutureBuilder<List<Booking>>(
         future: _jobs,
         builder: (context, snap) {
@@ -647,7 +648,7 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Earnings')),
+      appBar: AppBar(title: Text(tr('earnings')), actions: const [LanguageToggle()]),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -737,13 +738,78 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
 
 // ---------------- Provider profile ----------------
 
-class _ProviderProfileTab extends StatelessWidget {
+class _ProviderProfileTab extends StatefulWidget {
   final Profile profile;
   const _ProviderProfileTab({required this.profile});
   @override
+  State<_ProviderProfileTab> createState() => _ProviderProfileTabState();
+}
+
+class _ProviderProfileTabState extends State<_ProviderProfileTab> {
+  late String? _phone = widget.profile.phone;
+
+  Future<void> _editMobile() async {
+    final controller = TextEditingController(text: _phone ?? '');
+    String? error;
+    String? savedPhone;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(tr('updateMobile')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: tr('mobileNumber'),
+                  hintText: '0300-1234567',
+                  errorText: error,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(tr('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (!isValidPakistaniMobile(controller.text)) {
+                  setDialogState(() => error = tr('mobileInvalid'));
+                  return;
+                }
+                try {
+                  savedPhone = normalizePakistaniMobile(controller.text);
+                  await updateMyPhone(savedPhone!);
+                  if (context.mounted) Navigator.of(context).pop(true);
+                } catch (e) {
+                  setDialogState(() => error = 'Could not save: $e');
+                }
+              },
+              child: Text(tr('save')),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (saved == true && savedPhone != null && mounted) {
+      setState(() => _phone = savedPhone);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('mobileSaved'))),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final profile = widget.profile;
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: Text(tr('profile')), actions: const [LanguageToggle()]),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -770,7 +836,7 @@ class _ProviderProfileTab extends StatelessWidget {
                           Text(profile.fullName ?? 'Provider',
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                           Text(profile.email, style: const TextStyle(color: AppColors.inkSoft)),
-                          if (profile.phone != null) Text(profile.phone!, style: const TextStyle(color: AppColors.inkSoft)),
+                          if (_phone != null) Text(_phone!, style: const TextStyle(color: AppColors.inkSoft)),
                           const Chip(label: Text('provider'), backgroundColor: AppColors.tealLight),
                         ],
                       ),
@@ -779,11 +845,24 @@ class _ProviderProfileTab extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            // Own mobile number — visible only to the provider himself.
+            // Customers never see provider phone numbers (anti-bypass).
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.phone, color: AppColors.teal),
+                title: Text(tr('mobileNumber')),
+                subtitle: Text(_phone ?? '—'),
+                trailing: TextButton(
+                  onPressed: _editMobile,
+                  child: Text(tr('updateMobile')),
+                ),
+              ),
+            ),
             const SizedBox(height: 16),
-            const Text(
-              'To update your services, charges, bio, CNIC documents or selfie, use the verification flow in the app. '
-              'Your verification status and availability are managed here.',
-              style: TextStyle(color: AppColors.inkSoft),
+            Text(
+              tr('profileUpdateHint'),
+              style: const TextStyle(color: AppColors.inkSoft),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -797,7 +876,7 @@ class _ProviderProfileTab extends StatelessWidget {
                   );
                 },
                 icon: const Icon(Icons.verified_user),
-                label: const Text('Update verification & documents'),
+                label: Text(tr('updateVerification')),
               ),
             ),
             const SizedBox(height: 24),
@@ -806,7 +885,7 @@ class _ProviderProfileTab extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: () async => db.auth.signOut(),
                 icon: const Icon(Icons.logout),
-                label: const Text('Log out'),
+                label: Text(tr('logOut')),
               ),
             ),
           ],

@@ -1,6 +1,7 @@
 // Unit tests for provider onboarding helpers (no Supabase needed):
 // CNIC validation/normalisation, the ProviderDocument model, and the
 // platform guideline warning for a provider's own charge.
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:project_services/models.dart';
 import 'package:project_services/screens/provider_onboarding_screen.dart';
@@ -70,6 +71,71 @@ void main() {
 
     test('no warning when the base price is missing', () {
       expect(priceGuidelineWarning(100, 0), isNull);
+    });
+  });
+
+  group('Pakistani mobile helpers', () {
+    test('normalizePakistaniMobile strips spaces and dashes', () {
+      expect(normalizePakistaniMobile('0300-1234567'), '03001234567');
+      expect(normalizePakistaniMobile('0300 1234567'), '03001234567');
+      expect(normalizePakistaniMobile('03001234567'), '03001234567');
+    });
+
+    test('normalizePakistaniMobile converts +92 to the 0 form', () {
+      expect(normalizePakistaniMobile('+92 300 1234567'), '03001234567');
+      expect(normalizePakistaniMobile('+923001234567'), '03001234567');
+      expect(normalizePakistaniMobile('0092 300 1234567'), '03001234567');
+    });
+
+    test('isValidPakistaniMobile accepts 11 digits starting with 03', () {
+      expect(isValidPakistaniMobile('03001234567'), isTrue);
+      expect(isValidPakistaniMobile('0300-1234567'), isTrue);
+      expect(isValidPakistaniMobile('0300 1234567'), isTrue);
+      expect(isValidPakistaniMobile('+92 300 1234567'), isTrue);
+      expect(isValidPakistaniMobile('03331234567'), isTrue);
+    });
+
+    test('isValidPakistaniMobile rejects landlines and wrong lengths', () {
+      expect(isValidPakistaniMobile('02131234567'), isFalse); // landline
+      expect(isValidPakistaniMobile('0300123456'), isFalse); // 10 digits
+      expect(isValidPakistaniMobile('030012345678'), isFalse); // 12 digits
+      expect(isValidPakistaniMobile(''), isFalse);
+      expect(isValidPakistaniMobile('abc'), isFalse);
+      expect(isValidPakistaniMobile('92001234567'), isFalse);
+    });
+  });
+
+  group('MobileNumberField (Step 1 form field)', () {
+    testWidgets('renders a phone-keyboard field labelled Mobile number',
+        (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MobileNumberField(controller: controller),
+          ),
+        ),
+      );
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.keyboardType, TextInputType.phone);
+      expect(field.decoration?.labelText, 'Mobile number');
+      expect(field.decoration?.hintText, '0300-1234567');
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('shows the prefilled number from the account profile',
+        (tester) async {
+      final controller = TextEditingController(text: '03063833728');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MobileNumberField(controller: controller),
+          ),
+        ),
+      );
+      expect(find.text('03063833728'), findsOneWidget);
     });
   });
 }

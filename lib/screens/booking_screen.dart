@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
+import '../l10n/language_toggle.dart';
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
@@ -235,7 +237,7 @@ class _BookingScreenState extends State<BookingScreen> {
     final p = widget.provider;
     if (_doneBookingId != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Booking confirmed')),
+        appBar: AppBar(title: Text(tr('bookingConfirmed')), actions: const [LanguageToggle()]),
         body: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -244,9 +246,9 @@ class _BookingScreenState extends State<BookingScreen> {
             children: [
               const Icon(Icons.check_circle, color: AppColors.teal, size: 72),
               const SizedBox(height: 16),
-              const Text('Your booking is confirmed!',
+              Text(tr('bookingConfirmedMsg'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               Text('Booking ID: $_doneBookingId',
                   textAlign: TextAlign.center,
@@ -261,12 +263,12 @@ class _BookingScreenState extends State<BookingScreen> {
                     builder: (_) => TrackingScreen(bookingId: _doneBookingId!),
                   ));
                 },
-                child: const Text('Track my booking'),
+                child: Text(tr('trackBooking')),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
-                child: const Text('Back to home'),
+                child: Text(tr('backToHome')),
               ),
             ],
           ),
@@ -274,7 +276,7 @@ class _BookingScreenState extends State<BookingScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: Text('Book: ${s.name}')),
+      appBar: AppBar(title: Text(trf('bookTitle', {'service': s.name})), actions: const [LanguageToggle()]),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -294,14 +296,14 @@ class _BookingScreenState extends State<BookingScreen> {
                 ),
               )
             else
-              const Card(
+              Card(
                 child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('No technician chosen — an available technician will be assigned.'),
+                  padding: const EdgeInsets.all(16),
+                  child: Text(tr('noTechnician')),
                 ),
               ),
             const SizedBox(height: 16),
-            Text(_isDelivery ? 'What should the rider fetch?' : 'Describe the problem',
+            Text(_isDelivery ? tr('fetchProblem') : tr('describeProblem'),
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             TextField(
@@ -314,7 +316,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Photo of the problem (optional, up to 5)', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(tr('photoProblem'), style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -357,15 +359,15 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             const SizedBox(height: 16),
             if (_isDelivery) ...[
-              const Text('Pickup details', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(tr('pickupDetails'), style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              const Text('Where should the rider collect the items from?',
-                  style: TextStyle(color: AppColors.inkSoft)),
+              Text(tr('pickupHint'),
+                  style: const TextStyle(color: AppColors.inkSoft)),
               const SizedBox(height: 6),
               TextField(
                 controller: _pickupShop,
-                decoration: const InputDecoration(
-                  labelText: 'Pickup shop name',
+                decoration: InputDecoration(
+                  labelText: tr('pickupShopName'),
                   hintText: 'Example: Al-Shifa Pharmacy, Main Bazaar',
                 ),
               ),
@@ -373,8 +375,8 @@ class _BookingScreenState extends State<BookingScreen> {
               TextField(
                 controller: _pickupAddress,
                 maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Pickup address',
+                decoration: InputDecoration(
+                  labelText: tr('pickupAddress'),
                   hintText: 'Shop 4, Main Bazaar Road',
                 ),
               ),
@@ -382,7 +384,7 @@ class _BookingScreenState extends State<BookingScreen> {
               OutlinedButton.icon(
                 onPressed: _pickPickupOnMap,
                 icon: const Icon(Icons.map),
-                label: const Text('Pick pickup on map'),
+                label: Text(tr('pickPickupOnMap')),
               ),
               if (_pickupPoint != null) ...[
                 const SizedBox(height: 8),
@@ -399,19 +401,19 @@ class _BookingScreenState extends State<BookingScreen> {
               TextField(
                 controller: _itemCost,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Estimated item cost (Rs.) — optional',
+                decoration: InputDecoration(
+                  labelText: tr('itemCost'),
                   hintText: 'Example: 850',
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'An estimate helps the rider — you pay the actual shop price in cash when the rider arrives.',
-                style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+              Text(
+                tr('itemCostHint'),
+                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
               ),
               const SizedBox(height: 16),
             ],
-            const Text('Date & time', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(tr('dateTime'), style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Row(
               children: [
@@ -433,7 +435,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            Text(_isDelivery ? 'Delivery address' : 'Address',
+            Text(_isDelivery ? tr('deliveryAddress') : tr('address'),
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             TextField(
@@ -448,7 +450,7 @@ class _BookingScreenState extends State<BookingScreen> {
             OutlinedButton.icon(
               onPressed: _pickOnMap,
               icon: const Icon(Icons.map),
-              label: const Text('Pick on map'),
+              label: Text(tr('pickOnMap')),
             ),
             if (_pickedPoint != null) ...[
               const SizedBox(height: 8),
@@ -464,7 +466,7 @@ class _BookingScreenState extends State<BookingScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: _city,
-              decoration: const InputDecoration(labelText: 'City'),
+              decoration: InputDecoration(labelText: tr('city')),
             ),
             const SizedBox(height: 20),
             Card(
@@ -473,15 +475,15 @@ class _BookingScreenState extends State<BookingScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    _priceRow('Job price', formatRs(_jobValue)),
-                    _priceRow('Platform fee (15%)', formatRs(_commission)),
+                    _priceRow(tr('jobPrice'), formatRs(_jobValue)),
+                    _priceRow(tr('platformFee'), formatRs(_commission)),
                     if (_isDelivery &&
                         (num.tryParse(_itemCost.text.trim()) ?? 0) > 0)
-                      _priceRow('Estimated item cost (cash)',
+                      _priceRow(tr('itemCostCash'),
                           formatRs(num.parse(_itemCost.text.trim()))),
                     const Divider(),
-                    _priceRow('You pay (cash on delivery)', formatRs(_jobValue), bold: true),
-                    _priceRow('Technician receives', formatRs(_techReceives)),
+                    _priceRow(tr('youPayCod'), formatRs(_jobValue), bold: true),
+                    _priceRow(tr('technicianReceives'), formatRs(_techReceives)),
                   ],
                 ),
               ),
@@ -495,14 +497,12 @@ class _BookingScreenState extends State<BookingScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _busy ? null : _confirm,
-                child: Text(_busy ? 'Saving…' : 'Confirm booking — ${formatRs(_jobValue)}'),
+                child: Text(_busy ? tr('saving') : trf('confirmBooking', {'price': formatRs(_jobValue)})),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              _isDelivery
-                  ? 'Cash on delivery. Item cost is paid in cash to the rider, plus the delivery fee above.'
-                  : 'Cash on delivery. You pay the technician after the work is done.',
+              _isDelivery ? tr('codNoteDelivery') : tr('codNoteBooking'),
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
             ),

@@ -3,6 +3,8 @@
 // is ON, so a fresh sign-up may need the inbox confirmation link first.
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../l10n/language_toggle.dart';
+import '../l10n/strings.dart';
 import '../repository.dart';
 import '../theme.dart';
 
@@ -59,8 +61,7 @@ class _AuthScreenState extends State<AuthScreen> {
         if (user == null) throw Exception('Sign-up did not return an account.');
         if (res.session == null) {
           setState(() {
-            _notice =
-                'Account created. Please check your email and click the confirmation link, then log in.';
+            _notice = tr('accountCreated');
           });
           return;
         }
@@ -89,25 +90,30 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 24),
+              // Language switch — reachable before signing in.
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [LanguageTextToggle()],
+              ),
+              const SizedBox(height: 8),
               _logo(),
               const SizedBox(height: 8),
-              const Text(
-                'AsaanKaam',
+              Text(
+                tr('appName'),
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.teal),
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.teal),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Trusted local professionals, booked in minutes.',
+              Text(
+                tr('tagline'),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.inkSoft),
+                style: const TextStyle(color: AppColors.inkSoft),
               ),
               const SizedBox(height: 28),
               SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('Log in')),
-                  ButtonSegment(value: false, label: Text('Sign up')),
+                segments: [
+                  ButtonSegment(value: true, label: Text(tr('logIn'))),
+                  ButtonSegment(value: false, label: Text(tr('signUp'))),
                 ],
                 selected: {_isLogin},
                 onSelectionChanged: (s) => setState(() {
@@ -120,37 +126,37 @@ class _AuthScreenState extends State<AuthScreen> {
               if (!_isLogin) ...[
                 TextField(
                   controller: _name,
-                  decoration: const InputDecoration(labelText: 'Full name'),
+                  decoration: InputDecoration(labelText: tr('fullName')),
                   textCapitalization: TextCapitalization.words,
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _phone,
-                  decoration: const InputDecoration(labelText: 'Phone (03xx-xxxxxxx)'),
+                  decoration: InputDecoration(labelText: tr('phone')),
                   keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 12),
               ],
               TextField(
                 controller: _email,
-                decoration: const InputDecoration(labelText: 'Email'),
+                decoration: InputDecoration(labelText: tr('email')),
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _password,
-                decoration: const InputDecoration(labelText: 'Password'),
+                decoration: InputDecoration(labelText: tr('password')),
                 obscureText: true,
               ),
               if (!_isLogin) ...[
                 const SizedBox(height: 16),
-                const Text('I am signing up as', style: TextStyle(fontWeight: FontWeight.w600)),
+                Text(tr('signUpAs'), style: const TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: _roleCard('customer', 'Customer', 'I want to book services')),
+                    Expanded(child: _roleCard('customer', tr('customer'), tr('customerHint'))),
                     const SizedBox(width: 12),
-                    Expanded(child: _roleCard('provider', 'Provider', 'I want to offer services')),
+                    Expanded(child: _roleCard('provider', tr('provider'), tr('providerHint'))),
                   ],
                 ),
               ],
@@ -182,16 +188,16 @@ class _AuthScreenState extends State<AuthScreen> {
               ElevatedButton(
                 onPressed: _busy ? null : _submit,
                 child: Text(_busy
-                    ? 'Please wait…'
+                    ? tr('pleaseWait')
                     : _isLogin
-                        ? 'Log in'
-                        : 'Create account'),
+                        ? tr('logIn')
+                        : tr('createAccount')),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Cash on delivery. No payment needed to book.',
+              Text(
+                tr('codNote'),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.inkSoft, fontSize: 13),
+                style: const TextStyle(color: AppColors.inkSoft, fontSize: 13),
               ),
             ],
           ),

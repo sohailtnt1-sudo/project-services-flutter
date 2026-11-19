@@ -34,6 +34,34 @@ String? matchServiceCity(String? placeCity) {
   return null;
 }
 
+/// Neutral country-wide view of Pakistan — used ONLY as the map's very
+/// first centre while live data (provider / destination / GPS) is still
+/// loading. It is deliberately NOT a city: a map must never open on a
+/// hardcoded city (the old bug opened every tracking map on Lahore).
+const LatLng kPakistanOverview = LatLng(30.3753, 69.3451);
+
+/// Pick a map's initial centre, in priority order:
+/// provider point > destination > customer's GPS > the booking city's
+/// centre. Returns null when nothing at all is known — the caller then
+/// keeps the neutral [kPakistanOverview] until live data arrives.
+/// Lahore is returned ONLY when the city actually is Lahore.
+LatLng? resolveInitialCenter({
+  LatLng? providerPoint,
+  LatLng? destination,
+  LatLng? gpsPoint,
+  String? city,
+}) {
+  if (providerPoint != null) return providerPoint;
+  if (destination != null) return destination;
+  if (gpsPoint != null) return gpsPoint;
+  final wanted = (city ?? '').trim();
+  if (wanted.isEmpty) return null;
+  for (final entry in kCityCenters.entries) {
+    if (entry.key.toLowerCase() == wanted.toLowerCase()) return entry.value;
+  }
+  return null;
+}
+
 /// How long to wait for a GPS fix before giving up: the map must never
 /// hang on a slow fix — callers fall back to the city centre instead.
 const Duration kGpsTimeout = Duration(seconds: 6);

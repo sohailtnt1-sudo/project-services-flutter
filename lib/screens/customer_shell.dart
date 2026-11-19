@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../l10n/language_toggle.dart';
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../services/location_service.dart';
@@ -49,12 +51,12 @@ class _CustomerShellState extends State<CustomerShell> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.teal,
         unselectedItemColor: AppColors.inkSoft,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.grid_view), label: 'Categories'),
-          BottomNavigationBarItem(icon: Icon(Icons.calendar_month), label: 'Bookings'),
-          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Messages'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        items: [
+          BottomNavigationBarItem(icon: const Icon(Icons.home), label: tr('home')),
+          BottomNavigationBarItem(icon: const Icon(Icons.grid_view), label: tr('categories')),
+          BottomNavigationBarItem(icon: const Icon(Icons.calendar_month), label: tr('bookings')),
+          BottomNavigationBarItem(icon: const Icon(Icons.message), label: tr('messages')),
+          BottomNavigationBarItem(icon: const Icon(Icons.person), label: tr('profile')),
         ],
       ),
     );
@@ -237,7 +239,7 @@ class _HomeTabState extends State<_HomeTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Hello, $name',
+                      Text(trf('hello', {'name': name}),
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.teal)),
                       Row(
                         children: [
@@ -267,13 +269,15 @@ class _HomeTabState extends State<_HomeTab> {
                     ],
                   ),
                 ),
+                // Language switch, on the home header.
+                const LanguageToggle(),
               ],
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _search,
               decoration: InputDecoration(
-                hintText: 'Search a service — fan repair, plumber…',
+                hintText: tr('searchHint'),
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.arrow_forward),
@@ -283,8 +287,8 @@ class _HomeTabState extends State<_HomeTab> {
               onSubmitted: (_) => _doSearch(),
             ),
             const SizedBox(height: 20),
-            const Text('Popular categories',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(tr('popularCategories'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             FutureBuilder<List<Category>>(
               future: _cats,
@@ -299,7 +303,7 @@ class _HomeTabState extends State<_HomeTab> {
                   return _errorBox('Could not load categories: ${snap.error}');
                 }
                 final cats = snap.data ?? [];
-                if (cats.isEmpty) return const Text('No categories yet.');
+                if (cats.isEmpty) return Text(tr('noCategories'));
                 return GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -322,8 +326,8 @@ class _HomeTabState extends State<_HomeTab> {
               },
             ),
             const SizedBox(height: 20),
-            const Text('Service area',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(tr('serviceArea'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
@@ -420,7 +424,7 @@ class _HomeTabState extends State<_HomeTab> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Text('Within: ',
+                Text(tr('within'),
                     style: TextStyle(fontWeight: FontWeight.bold)),
                 for (final r in _radiusOptions)
                   Padding(
@@ -450,7 +454,7 @@ class _HomeTabState extends State<_HomeTab> {
             Text('OpenStreetMap — technicians serve ${widget.city} and nearby areas.',
                 style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
             const SizedBox(height: 20),
-            Text('Recommended technicians in ${widget.city}',
+            Text(trf('recommendedTechnicians', {'city': widget.city}),
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             FutureBuilder<List<Provider>>(
@@ -521,7 +525,7 @@ class _HomeTabState extends State<_HomeTab> {
                           fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
                 Chip(
-                  label: Text(p.isAvailable ? 'Online' : 'Offline',
+                  label: Text(p.isAvailable ? tr('online') : tr('offline'),
                       style: const TextStyle(fontSize: 12)),
                   backgroundColor:
                       p.isAvailable ? AppColors.tealLight : null,
@@ -555,7 +559,7 @@ class _HomeTabState extends State<_HomeTab> {
                   _showServicePicker(p);
                 },
                 icon: const Icon(Icons.calendar_month),
-                label: const Text('Book'),
+                label: Text(tr('book')),
               ),
             ),
           ],
@@ -780,8 +784,8 @@ class _ProviderTile extends StatelessWidget {
           '${provider.averageRating > 0 ? ' · ★ ${provider.averageRating}' : ''}',
         ),
         trailing: provider.isAvailable
-            ? const Chip(label: Text('Online', style: TextStyle(fontSize: 12)), backgroundColor: AppColors.tealLight)
-            : const Chip(label: Text('Offline', style: TextStyle(fontSize: 12))),
+            ? Chip(label: Text(tr('online'), style: const TextStyle(fontSize: 12)), backgroundColor: AppColors.tealLight)
+            : Chip(label: Text(tr('offline'), style: const TextStyle(fontSize: 12))),
       ),
     );
   }
@@ -843,7 +847,7 @@ class _CategoriesTabState extends State<_CategoriesTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Categories')),
+      appBar: AppBar(title: Text(tr('categories')), actions: const [LanguageToggle()]),
       body: FutureBuilder<List<Category>>(
         future: _cats,
         builder: (context, snap) {
@@ -909,7 +913,7 @@ class _MyBookingsTabState extends State<_MyBookingsTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My bookings')),
+      appBar: AppBar(title: Text(tr('myBookings')), actions: const [LanguageToggle()]),
       body: FutureBuilder<List<Booking>>(
         future: _bookings,
         builder: (context, snap) {
@@ -919,10 +923,10 @@ class _MyBookingsTabState extends State<_MyBookingsTab> {
           if (snap.hasError) return Center(child: Text('Could not load bookings: ${snap.error}'));
           final list = snap.data ?? [];
           if (list.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('No bookings yet. Pick a service from Home to book your first job.'),
+                padding: const EdgeInsets.all(24),
+                child: Text(tr('noBookings')),
               ),
             );
           }
@@ -982,7 +986,7 @@ class _ProfileTabState extends State<_ProfileTab> {
   Widget build(BuildContext context) {
     final p = widget.profile;
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: Text(tr('profile')), actions: const [LanguageToggle()]),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1024,7 +1028,7 @@ class _ProfileTabState extends State<_ProfileTab> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Booking history', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(tr('bookingHistory'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             FutureBuilder<List<Booking>>(
               future: _bookings,
@@ -1033,7 +1037,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final list = snap.data ?? [];
-                if (list.isEmpty) return const Text('No bookings yet.');
+                if (list.isEmpty) return Text(tr('noBookingsShort'));
                 return Column(
                   children: list.take(5).map((b) => Card(
                         child: ListTile(
@@ -1049,7 +1053,7 @@ class _ProfileTabState extends State<_ProfileTab> {
               },
             ),
             const SizedBox(height: 16),
-            const Text('My ratings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(tr('myRatings'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             FutureBuilder<List<Map<String, dynamic>>>(
               future: _reviews,
@@ -1058,7 +1062,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final list = snap.data ?? [];
-                if (list.isEmpty) return const Text('You have not rated any job yet.');
+                if (list.isEmpty) return Text(tr('noRatings'));
                 return Column(
                   children: list.map((r) {
                     final booking = r['bookings'];
@@ -1085,7 +1089,7 @@ class _ProfileTabState extends State<_ProfileTab> {
               child: OutlinedButton.icon(
                 onPressed: () async => db.auth.signOut(),
                 icon: const Icon(Icons.logout),
-                label: const Text('Log out'),
+                label: Text(tr('logOut')),
               ),
             ),
             const SizedBox(height: 8),

@@ -425,6 +425,25 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
     // shouldDeleteLocationRow(LocationStopReason.leftRouteScreen).
   }
 
+  /// My-location button: jump the map to the provider's current GPS
+  /// and move the "You" marker there. A failed/denied lookup shows a
+  /// short message and never crashes.
+  Future<void> _goToMyLocation() async {
+    final pos = await getCurrentPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Location permission nahi mili — apni location nahi dikhayi ja sakti'),
+        ),
+      );
+      return;
+    }
+    setState(() => _myPos = pos);
+    _mapController.move(pos, 15);
+  }
+
   @override
   void dispose() {
     // Cancel the GPS stream only. The location row stays: the job is
@@ -617,82 +636,101 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                         borderRadius: BorderRadius.circular(16),
                         child: SizedBox(
                           height: 320,
-                          child: FlutterMap(
-                            mapController: _mapController,
-                            options: MapOptions(
-                              initialCenter: _initialCenter,
-                              initialZoom: 13,
-                            ),
+                          child: Stack(
                             children: [
-                              TileLayer(
-                                urlTemplate:
-                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                userAgentPackageName:
-                                    'com.projectservices.app',
-                              ),
-                              if (resolved != null)
-                                PolylineLayer(
-                                  polylines: [
-                                    Polyline(
-                                      points: resolved.points,
-                                      color: resolved.isFallback
-                                          ? AppColors.amber
-                                          : AppColors.teal,
-                                      strokeWidth: 4,
-                                      pattern: resolved.isFallback
-                                          ? StrokePattern.dashed(
-                                              segments: const [8, 6])
-                                          : const StrokePattern.solid(),
-                                    ),
-                                  ],
+                              FlutterMap(
+                                mapController: _mapController,
+                                options: MapOptions(
+                                  initialCenter: _initialCenter,
+                                  initialZoom: 13,
                                 ),
-                              MarkerLayer(
-                                markers: [
-                                  if (_myPos != null)
-                                    Marker(
-                                      point: _myPos!,
-                                      width: 60,
-                                      height: 50,
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.teal,
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: const Text(
-                                              'You',
-                                              style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 11,
-                                                  fontWeight:
-                                                      FontWeight.bold),
-                                            ),
+                                children: [
+                                  TileLayer(
+                                    urlTemplate:
+                                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                    userAgentPackageName:
+                                        'com.projectservices.app',
+                                  ),
+                                  if (resolved != null)
+                                    PolylineLayer(
+                                      polylines: [
+                                        Polyline(
+                                          points: resolved.points,
+                                          color: resolved.isFallback
+                                              ? AppColors.amber
+                                              : AppColors.teal,
+                                          strokeWidth: 4,
+                                          pattern: resolved.isFallback
+                                              ? StrokePattern.dashed(
+                                                  segments: const [8, 6])
+                                              : const StrokePattern.solid(),
+                                        ),
+                                      ],
+                                    ),
+                                  MarkerLayer(
+                                    markers: [
+                                      if (_myPos != null)
+                                        Marker(
+                                          point: _myPos!,
+                                          width: 60,
+                                          height: 50,
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                    horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.teal,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: const Text(
+                                                  'You',
+                                                  style: TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold),
+                                                ),
+                                              ),
+                                              const Icon(
+                                                Icons.location_on,
+                                                color: AppColors.teal,
+                                                size: 30,
+                                              ),
+                                            ],
                                           ),
-                                          const Icon(
+                                        ),
+                                      if (_destination != null)
+                                        Marker(
+                                          point: _destination!,
+                                          width: 40,
+                                          height: 40,
+                                          child: const Icon(
                                             Icons.location_on,
-                                            color: AppColors.teal,
-                                            size: 30,
+                                            color: AppColors.red,
+                                            size: 36,
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                  if (_destination != null)
-                                    Marker(
-                                      point: _destination!,
-                                      width: 40,
-                                      height: 40,
-                                      child: const Icon(
-                                        Icons.location_on,
-                                        color: AppColors.red,
-                                        size: 36,
-                                      ),
-                                    ),
+                                        ),
+                                    ],
+                                  ),
                                 ],
+                              ),
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Material(
+                                  color: Colors.white,
+                                  shape: const CircleBorder(),
+                                  elevation: 2,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.my_location,
+                                        color: AppColors.teal),
+                                    tooltip: 'My location',
+                                    onPressed: _goToMyLocation,
+                                  ),
+                                ),
                               ),
                             ],
                           ),

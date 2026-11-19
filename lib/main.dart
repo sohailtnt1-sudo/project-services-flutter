@@ -4,11 +4,13 @@
 // Admin is web-only (website /admin).
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'l10n/strings.dart';
 import 'models.dart';
 import 'repository.dart';
 import 'screens/auth_screen.dart';
 import 'screens/customer_shell.dart';
 import 'screens/provider_shell.dart';
+import 'services/language_service.dart';
 import 'services/notification_service.dart';
 import 'theme.dart';
 
@@ -16,6 +18,7 @@ final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await languageService.load();
   await initSupabase();
   NotificationService.messengerKey = scaffoldMessengerKey;
   await NotificationService.init();
@@ -27,12 +30,20 @@ class ProjectServicesApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AsaanKaam',
-      theme: buildTheme(),
-      debugShowCheckedModeBanner: false,
-      scaffoldMessengerKey: scaffoldMessengerKey,
-      home: const AuthGate(),
+    // Rebuild the whole app when the language changes, so every
+    // tr('…') string on screen switches immediately.
+    return ValueListenableBuilder<String>(
+      valueListenable: languageService,
+      builder: (context, lang, _) {
+        return MaterialApp(
+          title: tr('appName'),
+          locale: Locale(lang),
+          theme: buildTheme(),
+          debugShowCheckedModeBanner: false,
+          scaffoldMessengerKey: scaffoldMessengerKey,
+          home: const AuthGate(),
+        );
+      },
     );
   }
 }
