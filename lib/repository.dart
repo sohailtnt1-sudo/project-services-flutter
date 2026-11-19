@@ -696,6 +696,54 @@ Future<Map<String, num>> fetchProviderEarnings() async {
   return {'earned': earned, 'commission': commission, 'jobs': completed};
 }
 
+/// Per-job earnings for the signed-in provider's COMPLETED bookings,
+/// newest first — so the provider can see which job earned how much.
+/// Merges the completed bookings (with service name) with the
+/// provider's commission_ledger rows in Dart (see buildJobEarnings in
+/// models.dart). RLS already lets the provider SELECT their own
+/// bookings and commission_ledger rows — no policy change needed.
+/// The totals in fetchProviderEarnings() are untouched.
+Future<List<JobEarning>> fetchProviderJobEarnings() async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return [];
+  final providerId = profile['id'] as String;
+  final res = await db
+      .from('bookings')
+      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, cash_received_amount, cash_received_at, created_at, services(name)')
+      .eq('provider_id', providerId)
+      .eq('status', 'completed')
+      .order('created_at', ascending: false);
+  final bookings = (res as List).map((m) {
+    final row = m as Map<String, dynamic>;
+    final svc = row['services'];
+    return Booking(
+      id: row['id'] as String,
+      customerId: row['customer_id'] as String,
+      providerId: row['provider_id'] as String?,
+      serviceId: row['service_id'] as String?,
+      serviceName: svc is Map<String, dynamic> ? (svc['name'] as String? ?? 'Service') : 'Service',
+      status: row['status'] as String,
+      paymentStatus: row['payment_status'] as String,
+      description: row['description'] as String?,
+      scheduledAt: row['scheduled_at'] != null ? DateTime.parse(row['scheduled_at'] as String) : null,
+      estimatedPrice: (row['estimated_price'] as num?),
+      finalPrice: (row['final_price'] as num?),
+      commissionAmount: (row['commission_amount'] as num?),
+      cashReceivedAmount: (row['cash_received_amount'] as num?),
+      cashReceivedAt: row['cash_received_at'] != null ? DateTime.parse(row['cash_received_at'] as String) : null,
+      createdAt: DateTime.parse(row['created_at'] as String),
+    );
+  }).toList();
+  final ledger = await db
+      .from('commission_ledger')
+      .select('booking_id, booking_amount, commission_amount, provider_amount')
+      .eq('provider_id', providerId);
+  return buildJobEarnings(
+    bookings,
+    (ledger as List).cast<Map<String, dynamic>>(),
+  );
+}
+
 // ---------- Provider wallet (migration 005) ----------
 // The wallet is the provider's prepaid balance. balance >= 0 is credit;
 // balance < 0 is DUES owed to the platform. Commission is deducted

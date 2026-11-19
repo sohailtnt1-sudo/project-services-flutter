@@ -381,6 +381,64 @@ Map<String, dynamic> buildCashCompletionUpdate(num amount) => {
       'cash_received_amount': amount,
     };
 
+/// Per-job earnings for one completed booking (provider Earnings tab).
+/// [jobValue] is what the job was worth, [commission] is the 15%
+/// platform fee charged on it (from commission_ledger), and [earning]
+/// is what the provider keeps.
+class JobEarning {
+  final String bookingId;
+  final String serviceName;
+  final DateTime date;
+  final num jobValue;
+  final num commission;
+  JobEarning({
+    required this.bookingId,
+    required this.serviceName,
+    required this.date,
+    required this.jobValue,
+    required this.commission,
+  });
+
+  /// What the provider keeps from this job: job value minus fee.
+  num get earning => jobValue - commission;
+}
+
+/// The value of one job: the cash the provider declared at completion
+/// (migration 010/011 — commission is 15% of this), else the final
+/// price, else the estimate. 0 when the booking carries no amount.
+num jobValueForBooking(Booking booking) =>
+    booking.cashReceivedAmount ??
+    booking.finalPrice ??
+    booking.estimatedPrice ??
+    0;
+
+/// Merge completed bookings with their commission_ledger rows into a
+/// per-job earnings list, newest first. Pure — unit-tested in
+/// test/provider_job_earnings_test.dart. A booking with no ledger row
+/// (commission not recorded yet) gets commission 0. The date is the
+/// scheduled date, falling back to when the booking was created.
+List<JobEarning> buildJobEarnings(
+  List<Booking> bookings,
+  List<Map<String, dynamic>> ledgerRows,
+) {
+  final commissionByBooking = <String, num>{
+    for (final r in ledgerRows)
+      if (r['booking_id'] is String)
+        r['booking_id'] as String: (r['commission_amount'] as num?) ?? 0,
+  };
+  final out = bookings
+      .map((b) => JobEarning(
+            bookingId: b.id,
+            serviceName: b.serviceName,
+            date: b.scheduledAt ?? b.createdAt,
+            jobValue: jobValueForBooking(b),
+            commission: commissionByBooking[b.id] ?? 0,
+          ))
+      .toList();
+  out.sort((a, b) => b.date.compareTo(a.date));
+  return out;
+}
+
 /// A provider's live position (migration 007, table provider_locations).
 /// One row per provider; visible to customers only while the provider is
 /// online + approved + available (enforced server-side by RLS and by the

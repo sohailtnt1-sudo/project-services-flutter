@@ -718,11 +718,13 @@ class _ProviderEarningsTab extends StatefulWidget {
 
 class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
   late Future<Map<String, num>> _earnings;
+  late Future<List<JobEarning>> _jobEarnings;
   late Future<List<Map<String, dynamic>>> _reviews;
   @override
   void initState() {
     super.initState();
     _earnings = fetchProviderEarnings();
+    _jobEarnings = fetchProviderJobEarnings();
     _reviews = fetchProviderReviews();
   }
 
@@ -767,6 +769,53 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
               },
             ),
             const SizedBox(height: 20),
+            Text(tr('perJobEarnings'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            FutureBuilder<List<JobEarning>>(
+              future: _jobEarnings,
+              builder: (context, jsnap) {
+                if (jsnap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (jsnap.hasError) {
+                  return Text('Could not load per-job earnings: ${jsnap.error}',
+                      style: const TextStyle(color: AppColors.inkSoft));
+                }
+                final jobs = jsnap.data ?? [];
+                if (jobs.isEmpty) return Text(tr('noJobEarnings'), style: const TextStyle(color: AppColors.inkSoft));
+                return Column(
+                  children: jobs.map((j) {
+                    final date = '${j.date.day}/${j.date.month}/${j.date.year}';
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(j.serviceName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                ),
+                                Text(date, style: const TextStyle(color: AppColors.inkSoft)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _earningRow(tr('jobPrice'), formatRs(j.jobValue)),
+                            const SizedBox(height: 4),
+                            _earningRow(tr('platformFee'), formatRs(j.commission)),
+                            const SizedBox(height: 4),
+                            _earningRow(tr('youKeep'), formatRs(j.earning), bold: true),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
             const Text('Customer reviews', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             FutureBuilder<List<Map<String, dynamic>>>(
@@ -797,6 +846,25 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _earningRow(String label, String value, {bool bold = false}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(label,
+              style: TextStyle(
+                color: bold ? AppColors.ink : AppColors.inkSoft,
+                fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+              )),
+        ),
+        Text(value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+              color: bold ? AppColors.teal : AppColors.ink,
+            )),
+      ],
     );
   }
 

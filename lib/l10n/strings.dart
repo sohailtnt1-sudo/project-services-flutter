@@ -150,6 +150,10 @@ const Map<String, Map<String, String>> _strings = {
     'dashboard': 'Dashboard',
     'jobs': 'Jobs',
     'earnings': 'Earnings',
+    'perJobEarnings': 'Per-job earnings',
+    'youKeep': 'You keep',
+    'noJobEarnings':
+        'No completed jobs yet. Your per-job earnings will appear here once jobs are completed.',
     'providerDashboard': 'Provider dashboard',
     'completeVerification': 'Complete verification',
     'updateVerification': 'Update verification & documents',
@@ -305,6 +309,10 @@ const Map<String, Map<String, String>> _strings = {
     'dashboard': 'ڈیش بورڈ',
     'jobs': 'کام',
     'earnings': 'آمدنی',
+    'perJobEarnings': 'ہر کام کی آمدنی',
+    'youKeep': 'آپ کو ملے گا',
+    'noJobEarnings':
+        'ابھی کوئی مکمل شدہ کام نہیں۔ کام مکمل ہونے پر ہر کام کی آمدنی یہاں نظر آئے گی۔',
     'providerDashboard': 'ماہر کا ڈیش بورڈ',
     'completeVerification': 'تصدیق مکمل کریں',
     'updateVerification': 'تصدیق اور دستاویزات اپ ڈیٹ کریں',
