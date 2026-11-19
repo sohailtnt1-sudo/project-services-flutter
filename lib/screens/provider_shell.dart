@@ -413,7 +413,19 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
     _jobs = fetchProviderJobs();
   }
 
-  void _refresh() => setState(() => _jobs = fetchProviderJobs());
+  // The fetch must start OUTSIDE setState and the assignment must use a
+  // block body: an arrow closure returns the Future from
+  // fetchProviderJobs(), and setState throws when its callback returns a
+  // Future — Accept/Reject showed "Could not update job" even though the
+  // database update had already succeeded.
+  void _refresh() {
+    final jobs = fetchProviderJobs();
+    if (mounted) {
+      setState(() {
+        _jobs = jobs;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

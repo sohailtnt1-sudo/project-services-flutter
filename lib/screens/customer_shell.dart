@@ -931,7 +931,18 @@ class _MyBookingsTabState extends State<_MyBookingsTab> {
             );
           }
           return RefreshIndicator(
-            onRefresh: () async => setState(() => _bookings = fetchMyBookings()),
+            onRefresh: () async {
+              // Same setState-Future bug as the provider Jobs tab: start
+              // the fetch outside setState and assign with a block body,
+              // then await so the spinner stays until the data arrives.
+              final bookings = fetchMyBookings();
+              if (mounted) {
+                setState(() {
+                  _bookings = bookings;
+                });
+              }
+              await bookings;
+            },
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: list.length,
