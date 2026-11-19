@@ -58,6 +58,13 @@ android {
             }
         }
     }
+
+    // Release builds run lintVital, whose JavaDoc parser crashes on AGP 9
+    // (NoSuchMethodError inside lint itself, on firebase_core). Skip the
+    // release lint check; debug builds never run it.
+    lint {
+        checkReleaseBuilds = false
+    }
 }
 
 kotlin {
