@@ -6,8 +6,9 @@
 // Dynamic content from the database (category / service names, provider
 // names, city names) is NOT translated and stays as-is. Chat, tracking
 // and map screens keep their English strings for now, except the admin
-// review note on the chat screen (chatAdminNote) — a later pass can
-// extend this map; every key must exist in both languages (enforced by
+// review note on the chat screen (chatAdminNote) and the cash-received
+// labels (cashReceived*, cashPaid) — a later pass can extend this map;
+// every key must exist in both languages (enforced by
 // test/language_test.dart).
 //
 // Usage: `tr('home')` reads the current language from the language
@@ -57,6 +58,15 @@ const Map<String, Map<String, String>> _strings = {
     // Chat
     'chatAdminNote':
         'Chats may be reviewed by the AsaanKaam admin for safety and dispute resolution.',
+    // Cash received (migration 010)
+    'cashReceived': 'Cash received',
+    'cashReceivedTitle': 'Cash received from customer',
+    'cashAmountLabel': 'Amount received (Rs.)',
+    'cashAmountError': 'Enter an amount greater than 0.',
+    'cashReceivedNote':
+        'Declare the cash you received — it will be shown to the customer and the admin.',
+    'cashPaid': 'Cash paid: {amount}',
+    'confirmCompletion': 'Confirm completion',
     // Home
     'hello': 'Hello, {name}',
     'searchHint': 'Search a service — fan repair, plumber…',
@@ -203,6 +213,15 @@ const Map<String, Map<String, String>> _strings = {
     // Chat
     'chatAdminNote':
         'حفاظت اور تنازعات کے حل کے لیے AsaanKaam ایڈمن چیٹس دیکھ سکتا ہے۔',
+    // Cash received (migration 010)
+    'cashReceived': 'نقد موصول ہوا',
+    'cashReceivedTitle': 'گاہک سے نقد رقم موصول ہوئی',
+    'cashAmountLabel': 'موصول شدہ رقم (روپے)',
+    'cashAmountError': 'صفر سے زیادہ رقم درج کریں۔',
+    'cashReceivedNote':
+        'موصول شدہ نقد رقم درج کریں — یہ گاہک اور ایڈمن کو دکھائی جائے گی۔',
+    'cashPaid': 'نقد ادا کیا گیا: {amount}',
+    'confirmCompletion': 'تکمیل کی تصدیق کریں',
     // Home
     'hello': 'السلام علیکم، {name}',
     'searchHint': 'سروس تلاش کریں — پنکھا مرمت، پلمبر…',

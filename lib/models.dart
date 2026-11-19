@@ -74,6 +74,11 @@ class Booking {
   final num? estimatedPrice;
   final num? finalPrice;
   final num? commissionAmount;
+  // Cash received (migration 010): amount the provider declared taking
+  // from the customer at completion + when it was declared. Null until
+  // the provider declares it.
+  final num? cashReceivedAmount;
+  final DateTime? cashReceivedAt;
   final DateTime createdAt;
   // Delivery on Demand (migration 008): pickup point for rider jobs.
   // Null for normal service bookings.
@@ -95,6 +100,8 @@ class Booking {
     this.estimatedPrice,
     this.finalPrice,
     this.commissionAmount,
+    this.cashReceivedAmount,
+    this.cashReceivedAt,
     required this.createdAt,
     this.pickupShopName,
     this.pickupAddress,
@@ -351,6 +358,28 @@ bool isValidPakistaniMobile(String raw) {
   final digits = normalizePakistaniMobile(raw);
   return digits.length == 11 && digits.startsWith('03');
 }
+
+/// Cash received at completion (migration 010): the provider must
+/// declare a real amount (> 0). Parses the dialog input; null when the
+/// text is not a number.
+num? parseCashAmount(String raw) {
+  final text = raw.trim().replaceAll(',', '');
+  if (text.isEmpty) return null;
+  final value = num.tryParse(text);
+  if (value == null) return null;
+  return value;
+}
+
+bool isValidCashReceivedAmount(num? amount) =>
+    amount != null && amount > 0;
+
+/// The single update the provider sends at completion: status ->
+/// 'completed' together with the declared cash amount, so the DB
+/// triggers (commission + cash audit) fire on one consistent row.
+Map<String, dynamic> buildCashCompletionUpdate(num amount) => {
+      'status': 'completed',
+      'cash_received_amount': amount,
+    };
 
 /// A provider's live position (migration 007, table provider_locations).
 /// One row per provider; visible to customers only while the provider is

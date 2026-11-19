@@ -346,7 +346,7 @@ Future<List<Booking>> fetchMyBookings() async {
   final user = db.auth.currentUser!;
   final res = await db
       .from('bookings')
-      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, pickup_shop_name, pickup_address, pickup_latitude, pickup_longitude, services(name), provider_profiles(id, profiles(full_name))')
+      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, cash_received_amount, cash_received_at, created_at, pickup_shop_name, pickup_address, pickup_latitude, pickup_longitude, services(name), provider_profiles(id, profiles(full_name))')
       .eq('customer_id', user.id)
       .order('created_at', ascending: false);
   return (res as List).map((m) {
@@ -372,6 +372,8 @@ Future<List<Booking>> fetchMyBookings() async {
       estimatedPrice: (row['estimated_price'] as num?),
       finalPrice: (row['final_price'] as num?),
       commissionAmount: (row['commission_amount'] as num?),
+      cashReceivedAmount: (row['cash_received_amount'] as num?),
+      cashReceivedAt: row['cash_received_at'] != null ? DateTime.parse(row['cash_received_at'] as String) : null,
       createdAt: DateTime.parse(row['created_at'] as String),
       pickupShopName: row['pickup_shop_name'] as String?,
       pickupAddress: row['pickup_address'] as String?,
@@ -617,7 +619,7 @@ Future<List<Booking>> fetchProviderJobs() async {
   final providerId = profile['id'] as String;
   final res = await db
       .from('bookings')
-      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, created_at, pickup_shop_name, pickup_address, pickup_latitude, pickup_longitude, services(name), profiles!bookings_customer_id_fkey(full_name)')
+      .select('id, customer_id, provider_id, service_id, status, payment_status, description, scheduled_at, estimated_price, final_price, commission_amount, cash_received_amount, cash_received_at, created_at, pickup_shop_name, pickup_address, pickup_latitude, pickup_longitude, services(name), profiles!bookings_customer_id_fkey(full_name)')
       .eq('provider_id', providerId)
       .order('created_at', ascending: false);
   return (res as List).map((m) {
@@ -638,6 +640,8 @@ Future<List<Booking>> fetchProviderJobs() async {
       estimatedPrice: (row['estimated_price'] as num?),
       finalPrice: (row['final_price'] as num?),
       commissionAmount: (row['commission_amount'] as num?),
+      cashReceivedAmount: (row['cash_received_amount'] as num?),
+      cashReceivedAt: row['cash_received_at'] != null ? DateTime.parse(row['cash_received_at'] as String) : null,
       createdAt: DateTime.parse(row['created_at'] as String),
       pickupShopName: row['pickup_shop_name'] as String?,
       pickupAddress: row['pickup_address'] as String?,
@@ -654,6 +658,20 @@ Future<void> updateBookingStatus(String bookingId, String newStatus) async {
   // history row automatically on every status change, and there is no
   // direct INSERT policy for clients on that table — a direct insert
   // fails with RLS 42501 ("new row violates row-level security policy").
+}
+
+/// Complete a job AND declare the cash received from the customer, in
+/// ONE update (migration 010). The DB then (a) records the 15%
+/// commission on the job value (migration 005, unchanged), (b) writes
+/// the cash payment row and (c) posts the "Cash received: Rs. X"
+/// receipt message into the booking's chat — all server-side. The
+/// amount must be > 0 (validated in the UI; the DB guard trigger
+/// rejects 0 / negative too).
+Future<void> completeBookingWithCash(String bookingId, num amount) async {
+  await db
+      .from('bookings')
+      .update(buildCashCompletionUpdate(amount))
+      .eq('id', bookingId);
 }
 
 Future<Map<String, num>> fetchProviderEarnings() async {

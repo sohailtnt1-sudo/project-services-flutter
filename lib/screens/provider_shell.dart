@@ -455,6 +455,69 @@ class _JobTile extends StatefulWidget {
 class _JobTileState extends State<_JobTile> {
   bool _busy = false;
 
+  /// Cash declaration at completion (migration 010): the provider must
+  /// declare the cash taken from the customer before the job can be
+  /// marked completed. Pre-filled with the job value (final price, else
+  /// the estimate), editable, required and > 0. Returns null when the
+  /// provider cancels — the job then stays in progress.
+  Future<num?> _askCashReceived() async {
+    final b = widget.booking;
+    final preset = b.finalPrice ?? b.estimatedPrice;
+    final controller = TextEditingController(
+      text: preset == null
+          ? ''
+          : (preset == preset.truncateToDouble()
+              ? preset.truncate().toString()
+              : preset.toString()),
+    );
+    String? error;
+    return showDialog<num?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(tr('cashReceivedTitle')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(tr('cashReceivedNote')),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: tr('cashAmountLabel'),
+                  errorText: error,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(tr('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final amount = parseCashAmount(controller.text);
+                if (!isValidCashReceivedAmount(amount)) {
+                  setDialogState(() => error = tr('cashAmountError'));
+                  return;
+                }
+                Navigator.of(ctx).pop(amount);
+              },
+              child: Text(tr('confirmCompletion')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _setStatus(String status) async {
     setState(() => _busy = true);
     try {
@@ -486,7 +549,16 @@ class _JobTileState extends State<_JobTile> {
           return;
         }
       }
-      await updateBookingStatus(widget.booking.id, status);
+      // Completion needs the cash declaration first (migration 010):
+      // status + cash amount go in ONE update so the commission and
+      // cash-audit triggers fire on the same consistent row.
+      if (status == 'completed') {
+        final cashAmount = await _askCashReceived();
+        if (cashAmount == null) return; // Cancelled — job stays in progress.
+        await completeBookingWithCash(widget.booking.id, cashAmount);
+      } else {
+        await updateBookingStatus(widget.booking.id, status);
+      }
       // Terminal status: stop publishing my live location (best-effort,
       // never fails the status update). This is the ONLY place (besides
       // the explicit "Stop live location" tap and going offline) that
@@ -608,6 +680,15 @@ class _JobTileState extends State<_JobTile> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text('Job value: ${formatRs(b.estimatedPrice!)} · You receive ${formatRs((b.estimatedPrice! * 0.85).round())} after 15% fee'),
+              ),
+            if (b.cashReceivedAmount != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '${tr('cashReceived')}: ${formatRs(b.cashReceivedAmount!)}'
+                  '${b.cashReceivedAt != null ? ' · ${b.cashReceivedAt!.day}/${b.cashReceivedAt!.month}/${b.cashReceivedAt!.year}' : ''}',
+                  style: const TextStyle(color: AppColors.teal, fontWeight: FontWeight.w600),
+                ),
               ),
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 10),

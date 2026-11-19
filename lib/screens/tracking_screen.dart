@@ -1,6 +1,7 @@
 // Booking tracking: status timeline + uploaded photos.
 // Accepts either a Booking object or just an id (loads the booking).
 import 'package:flutter/material.dart';
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
@@ -101,6 +102,21 @@ class _TrackingScreenState extends State<TrackingScreen> {
                               '${b.scheduledAt!.hour}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}'),
                         if (b.estimatedPrice != null)
                           Text('Price: ${formatRs(b.estimatedPrice!)} · Cash on delivery'),
+                        // Cash receipt (migration 010): the amount the
+                        // provider declared taking from the customer.
+                        // The same receipt also appears in the chat.
+                        if (b.cashReceivedAmount != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '${trf('cashPaid', {'amount': formatRs(b.cashReceivedAmount!)})}'
+                              '${b.cashReceivedAt != null ? ' · ${b.cashReceivedAt!.day}/${b.cashReceivedAt!.month}/${b.cashReceivedAt!.year}' : ''}',
+                              style: const TextStyle(
+                                color: AppColors.teal,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         const SizedBox(height: 8),
                         Chip(
                           label: Text(statusLabel(b.status)),
