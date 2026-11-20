@@ -582,6 +582,60 @@ Future<ProviderDocument> uploadProviderDocument(
   );
 }
 
+// ---------- Wallet top-up requests (migration 014) ----------
+
+/// Upload a top-up payment screenshot to the public booking-media
+/// bucket, under {user_id}/topup-proofs/. Returns the public URL.
+/// Mirrors uploadProviderDocument; the file is not a document, so no
+/// document row is written — the URL goes on the topup_requests row.
+Future<String> uploadTopupScreenshot(File file) async {
+  final user = db.auth.currentUser!;
+  final name = file.path.split('/').last.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+  final path = '${user.id}/topup-proofs/${DateTime.now().millisecondsSinceEpoch}-$name';
+  await db.storage.from(kMediaBucket).upload(
+        path,
+        file,
+        fileOptions: const FileOptions(upsert: false),
+      );
+  return '${AppConfig.supabaseUrl}/storage/v1/object/public/$kMediaBucket/$path';
+}
+
+/// File a wallet top-up request: amount + transaction reference +
+/// payment screenshot URL. Nothing moves here — the admin approves it
+/// on /admin and the wallet is credited then.
+Future<void> submitTopupRequest({
+  required double amount,
+  required String reference,
+  required String screenshotUrl,
+}) async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) throw Exception('No provider profile found.');
+  await db.from('topup_requests').insert({
+    'provider_id': profile['id'] as String,
+    'amount': amount,
+    'reference': reference.trim(),
+    'screenshot_url': screenshotUrl,
+    'status': 'pending',
+  });
+}
+
+/// My top-up requests, newest first — so the provider can see a
+/// request is awaiting approval (and whether it was approved).
+Future<List<TopupRequest>> listMyTopupRequests({int limit = 10}) async {
+  final profile = await fetchMyProviderProfile();
+  if (profile == null) return [];
+  final res = await db
+      .from('topup_requests')
+      .select(
+          'id, provider_id, amount, reference, screenshot_url, status, admin_note, created_at, reviewed_at')
+      .eq('provider_id', profile['id'] as String)
+      .order('created_at', ascending: false)
+      .limit(limit);
+  return (res as List)
+      .map((m) => TopupRequest.fromMap(m as Map<String, dynamic>))
+      .toList();
+}
+
 Future<void> setAvailability(bool online) async {
   final profile = await fetchMyProviderProfile();
   if (profile == null) return;

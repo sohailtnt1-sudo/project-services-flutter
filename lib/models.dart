@@ -301,12 +301,52 @@ class WalletTransaction {
   }
 }
 
+/// A wallet top-up request (migration 014): the provider files the
+/// amount + transaction reference + payment screenshot from the app;
+/// the admin approves it on /admin and the wallet is credited then.
+/// status is 'pending' | 'approved' | 'rejected'.
+class TopupRequest {
+  final String id;
+  final String providerId;
+  final num amount;
+  final String reference;
+  final String screenshotUrl;
+  final String status;
+  final String? adminNote;
+  final DateTime createdAt;
+  final DateTime? reviewedAt;
+  TopupRequest({
+    required this.id,
+    required this.providerId,
+    required this.amount,
+    required this.reference,
+    required this.screenshotUrl,
+    required this.status,
+    this.adminNote,
+    required this.createdAt,
+    this.reviewedAt,
+  });
+  factory TopupRequest.fromMap(Map<String, dynamic> m) => TopupRequest(
+        id: m['id'] as String,
+        providerId: m['provider_id'] as String,
+        amount: (m['amount'] as num?) ?? 0,
+        reference: m['reference'] as String,
+        screenshotUrl: m['screenshot_url'] as String,
+        status: (m['status'] as String?) ?? 'pending',
+        adminNote: m['admin_note'] as String?,
+        createdAt: DateTime.parse(m['created_at'] as String),
+        reviewedAt: m['reviewed_at'] == null
+            ? null
+            : DateTime.parse(m['reviewed_at'] as String),
+      );
+  bool get isPending => status == 'pending';
+}
+
 /// A provider verification document (migration 001/002).
 /// document_type is free text — 'cnic_front', 'cnic_back' or 'selfie'.
 /// The CNIC *number* lives on the cnic_front row (document_number),
 /// never on provider_profiles (those rows are publicly readable).
-class ProviderDocument {
-  final String id;
+class ProviderDocument {  final String id;
   final String providerId;
   final String? documentType;
   final String? documentUrl;

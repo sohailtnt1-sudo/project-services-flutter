@@ -1,10 +1,15 @@
 // Provider shell: Dashboard | Jobs | Earnings | Profile.
 // One app, provider role — same Supabase backend as the website.
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../l10n/language_toggle.dart';
 import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
+import '../services/location_service.dart';
 import '../theme.dart';
 import 'chat_screen.dart';
 import 'job_route_screen.dart';
@@ -20,6 +25,63 @@ class ProviderShell extends StatefulWidget {
 
 class _ProviderShellState extends State<ProviderShell> {
   int _tab = 0;
+
+  /// Live location on the admin map while I am online: the old code
+  /// only published a position during an active job
+  /// (JobRouteScreen._startSharing), so an online provider with no
+  /// active job had no provider_locations row and no pin on the admin
+  /// Live Map. The timer lives on the SHELL — not the dashboard tab —
+  /// because the dashboard tab disposes on every tab switch, while the
+  /// shell stays mounted for the whole provider session.
+  Timer? _onlineLocationTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startOnlineLocationSharing();
+  }
+
+  @override
+  void dispose() {
+    _onlineLocationTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Publish my position now when online, then every
+  /// [kOnlineLocationShareInterval] while the app is open. Each tick
+  /// re-checks availability, so toggling offline (or the server-side
+  /// hide_location_when_offline trigger) stops the pin with no wiring
+  /// from the dashboard toggle. Best-effort throughout: a missing GPS
+  /// fix, denied permission or a failed upload never throws and never
+  /// touches the UI. Permission is only CHECKED here, never requested
+  /// — no surprise permission prompt at login; the dashboard tab shows
+  /// a note when permission is off.
+  Future<void> _startOnlineLocationSharing() async {
+    await _publishOnlineLocation();
+    _onlineLocationTimer ??= Timer.periodic(
+      kOnlineLocationShareInterval,
+      (_) => _publishOnlineLocation(),
+    );
+  }
+
+  Future<void> _publishOnlineLocation() async {
+    try {
+      if (!await isLocationSharingAvailable()) return;
+      final profile = await fetchMyProviderProfile();
+      if (profile == null) return;
+      if ((profile['is_available'] as bool?) ?? true) {
+        final pos = await getCurrentPosition();
+        if (pos == null) return;
+        await upsertMyProviderLocation(
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+        );
+      }
+    } catch (_) {
+      // Best-effort: never crash the shell for a location upload.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
@@ -64,6 +126,10 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
   late Future<ProviderWallet?> _wallet;
   late Future<List<WalletTransaction>> _transactions;
   bool _toggling = false;
+  // False when location permission/services are off: an online
+  // provider then has no pin on the admin map, so the dashboard shows
+  // a note under the availability switch.
+  bool _locationOk = true;
 
   @override
   void initState() {
@@ -76,6 +142,12 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
     _jobs = fetchProviderJobs();
     _wallet = getProviderWallet();
     _transactions = listWalletTransactions(limit: 5);
+    // Re-check whenever the tab reloads (toggle, return from system
+    // settings): the permission note must not go stale. The fetch
+    // starts OUTSIDE setState; only the flag assignment is inside it.
+    isLocationSharingAvailable().then((ok) {
+      if (mounted) setState(() => _locationOk = ok);
+    });
   }
 
   Future<void> _toggleAvailability(bool value) async {
@@ -230,6 +302,14 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                     onChanged: _toggling ? null : _toggleAvailability,
                   ),
                 ),
+                if (isAvailable && !_locationOk)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      tr('pv_locationPermissionNote'),
+                      style: const TextStyle(color: AppColors.red),
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 Text(tr('latestJobs'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
@@ -257,15 +337,53 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
 
 // ---------------- Provider wallet (migration 005) ----------------
 
-class _WalletSection extends StatelessWidget {
+class _WalletSection extends StatefulWidget {
   final Future<ProviderWallet?> walletFuture;
   final Future<List<WalletTransaction>> transactionsFuture;
   const _WalletSection({required this.walletFuture, required this.transactionsFuture});
+  @override
+  State<_WalletSection> createState() => _WalletSectionState();
+}
+
+class _WalletSectionState extends State<_WalletSection> {
+  // My top-up requests (migration 014) — re-fetched after a new
+  // request is sent, so the provider sees it awaiting approval.
+  late Future<List<TopupRequest>> _requests;
+
+  @override
+  void initState() {
+    super.initState();
+    _requests = listMyTopupRequests();
+  }
+
+  // The fetch starts OUTSIDE setState; only the assignment is inside
+  // it (see the setState-Future bug fixed in APK v7).
+  void _refreshRequests() {
+    final requests = listMyTopupRequests();
+    if (mounted) {
+      setState(() {
+        _requests = requests;
+      });
+    }
+  }
+
+  Future<void> _openTopUpDialog() async {
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _TopUpDialog(),
+    );
+    if (sent == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('pv_topUpSent'))),
+      );
+      _refreshRequests();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<ProviderWallet?>(
-      future: walletFuture,
+      future: widget.walletFuture,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Card(
@@ -333,10 +451,19 @@ class _WalletSection extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _openTopUpDialog,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(tr('pv_topUp')),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Text(tr('pv_recentActivity'), style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 FutureBuilder<List<WalletTransaction>>(
-                  future: transactionsFuture,
+                  future: widget.transactionsFuture,
                   builder: (context, tsnap) {
                     if (tsnap.connectionState == ConnectionState.waiting) {
                       return const Center(
@@ -385,11 +512,214 @@ class _WalletSection extends StatelessWidget {
                     );
                   },
                 ),
+                const SizedBox(height: 12),
+                FutureBuilder<List<TopupRequest>>(
+                  future: _requests,
+                  builder: (context, rsnap) {
+                    final list = rsnap.data ?? [];
+                    // Nothing filed yet: no block at all (and errors
+                    // here never break the wallet — the section is
+                    // informational only).
+                    if (list.isEmpty) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(tr('pv_topUpRequests'),
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        ...list.map((r) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${formatRs(r.amount)} · ${r.reference}',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold),
+                                        ),
+                                        Text(
+                                          '${r.createdAt.day}/${r.createdAt.month}/${r.createdAt.year}',
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.inkSoft),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    r.status == 'approved'
+                                        ? tr('pv_topUpApproved')
+                                        : r.status == 'rejected'
+                                            ? tr('pv_topUpRejected')
+                                            : tr('pv_topUpPending'),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: r.status == 'approved'
+                                          ? AppColors.teal
+                                          : r.status == 'rejected'
+                                              ? AppColors.red
+                                              : AppColors.inkSoft,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+// ---------------- Top-up request dialog (migration 014) ----------------
+
+/// Top-up request form: amount + transaction reference + payment
+/// screenshot. The screenshot uploads first; the request row is
+/// inserted only after the upload succeeds, so the admin never sees a
+/// request without proof. Upload failure leaves the dialog open with
+/// the error — the provider can retry without re-typing.
+class _TopUpDialog extends StatefulWidget {
+  const _TopUpDialog();
+  @override
+  State<_TopUpDialog> createState() => _TopUpDialogState();
+}
+
+class _TopUpDialogState extends State<_TopUpDialog> {
+  final _amountController = TextEditingController();
+  final _referenceController = TextEditingController();
+  XFile? _screenshot;
+  String? _error;
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _referenceController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickScreenshot() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked != null && mounted) {
+      setState(() => _screenshot = picked);
+    }
+  }
+
+  Future<void> _submit() async {
+    final amount = parseCashAmount(_amountController.text);
+    String? error;
+    if (!isValidCashReceivedAmount(amount)) {
+      error = tr('pv_topUpAmountError');
+    } else if (_referenceController.text.trim().isEmpty) {
+      error = tr('pv_topUpReferenceError');
+    } else if (_screenshot == null) {
+      error = tr('pv_topUpScreenshotError');
+    }
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final url = await uploadTopupScreenshot(File(_screenshot!.path));
+      await submitTopupRequest(
+        amount: amount!.toDouble(),
+        reference: _referenceController.text,
+        screenshotUrl: url,
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _error = trf('pv_topUpError', {'error': e.toString()});
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(tr('pv_topUpTitle')),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _amountController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: tr('pv_topUpAmount'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _referenceController,
+              decoration: InputDecoration(
+                labelText: tr('pv_topUpReference'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(tr('pv_topUpScreenshot'),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            if (_screenshot != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(_screenshot!.path),
+                  height: 140,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            OutlinedButton.icon(
+              onPressed: _submitting ? null : _pickScreenshot,
+              icon: const Icon(Icons.image, size: 18),
+              label: Text(_screenshot == null
+                  ? tr('pv_topUpChooseScreenshot')
+                  : tr('pv_topUpScreenshot')),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: AppColors.red)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed:
+              _submitting ? null : () => Navigator.of(context).pop(false),
+          child: Text(tr('cancel')),
+        ),
+        ElevatedButton(
+          onPressed: _submitting ? null : _submit,
+          child: Text(
+              _submitting ? tr('pv_topUpSending') : tr('pv_topUpSubmit')),
+        ),
+      ],
     );
   }
 }
@@ -564,12 +894,13 @@ class _JobTileState extends State<_JobTile> {
       } else {
         await updateBookingStatus(widget.booking.id, status);
       }
-      // Terminal status: stop publishing my live location (best-effort,
-      // never fails the status update). This is the ONLY place (besides
-      // the explicit "Stop live location" tap and going offline) that
-      // deletes the location row — the route screen's dispose
-      // deliberately does NOT delete it, so the customer keeps seeing
-      // the rider's last-known position while the job is active.
+      // Terminal status: stop publishing my live location for THIS job
+      // (best-effort, never fails the status update). The provider
+      // shell's online-location timer re-publishes within 30 s while
+      // the provider is still online, so the admin map keeps showing
+      // her pin after the job ends — the row is only gone for good
+      // when she goes offline (server-side hide trigger + the
+      // toggle's fast-path clear).
       if (status == 'completed' ||
           status == 'cancelled' ||
           status == 'rejected') {

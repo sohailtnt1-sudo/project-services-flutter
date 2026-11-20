@@ -66,6 +66,13 @@ LatLng? resolveInitialCenter({
 /// hang on a slow fix — callers fall back to the city centre instead.
 const Duration kGpsTimeout = Duration(seconds: 6);
 
+/// How often an online provider's position is published to the admin
+/// map while the app is open (ProviderShell). 30 s is frequent enough
+/// for a live pin and far slower than the 10 s job-tracking uploads,
+/// so it costs little battery; the row is also re-published within one
+/// interval after a job completes (job completion deletes the row).
+const Duration kOnlineLocationShareInterval = Duration(seconds: 30);
+
 /// The device's current position, or null when it cannot be obtained.
 /// Never throws: location services disabled, permission denied,
 /// denied-forever, a slow GPS fix (see [kGpsTimeout]), or any platform
