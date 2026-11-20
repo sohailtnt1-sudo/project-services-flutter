@@ -1,6 +1,7 @@
 // Approved providers for one service, with their own charges.
 // Tap a provider to start a booking with them.
 import 'package:flutter/material.dart';
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
@@ -46,14 +47,14 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                 Text(s.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 if (s.description != null) Text(s.description!, style: const TextStyle(color: AppColors.inkSoft)),
                 const SizedBox(height: 6),
-                Text('Base price: ${formatRs(s.basePrice)}  ·  Platform fee 15% is shown before you confirm.',
+                Text(trf('prv_basePrice', {'price': formatRs(s.basePrice)}),
                     style: const TextStyle(fontSize: 13, color: AppColors.inkSoft)),
                 const SizedBox(height: 6),
                 Row(
                   children: [
                     const Icon(Icons.location_on, size: 14, color: AppColors.teal),
                     const SizedBox(width: 2),
-                    Text('Showing providers in ${widget.city}',
+                    Text(trf('prv_showingInCity', {'city': widget.city}),
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.teal)),
                   ],
                 ),
@@ -68,7 +69,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snap.hasError) {
-                  return Center(child: Text('Could not load technicians: ${snap.error}'));
+                  return Center(child: Text(trf('prv_loadError', {'error': '${snap.error}'})));
                 }
                 final list = snap.data ?? [];
                 if (list.isEmpty) {
@@ -76,8 +77,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
-                        'No providers in ${widget.city} for this service yet. '
-                        'You can still book — an available technician will be assigned.',
+                        trf('prv_noProviders', {'city': widget.city}),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -106,10 +106,10 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           ],
                         ),
                         subtitle: Text(
-                          '${p.experienceYears} yrs experience'
+                          '${trf('prv_experience', {'years': '${p.experienceYears}'})}'
                           '${p.city != null ? ' · ${p.city}' : ''}'
                           '${p.averageRating > 0 ? ' · ★ ${p.averageRating}' : ''}'
-                          '${p.isAvailable ? '' : ' · Offline'}',
+                          '${p.isAvailable ? '' : ' · ${tr('offline')}'}',
                         ),
                         trailing: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -117,7 +117,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           children: [
                             Text(formatRs(price),
                                 style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.teal)),
-                            const Text('per job', style: TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+                            Text(tr('prv_perJob'), style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
                           ],
                         ),
                         onTap: () => Navigator.of(context).push(MaterialPageRoute(
@@ -150,7 +150,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                     categorySlug: widget.categorySlug,
                   ),
                 )),
-                child: const Text('Book without choosing a technician'),
+                child: Text(tr('prv_bookWithoutTechnician')),
               ),
             ),
           ),

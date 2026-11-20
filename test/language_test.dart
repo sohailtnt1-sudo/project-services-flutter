@@ -93,6 +93,29 @@ void main() {
       await service.setLanguage(kLanguageEnglish);
     });
 
+    test('new-screen keys resolve to real Urdu (not the key itself)', () async {
+      final service = languageService;
+      await service.load(prefs);
+      await service.setLanguage(kLanguageUrdu);
+      // One key per newly translated screen area.
+      expect(tr('cs_myLocation'), 'میری جگہ');
+      expect(tr('bk_cashOnDelivery'), 'کیش آن ڈیلیوری');
+      expect(tr('pv_accept'), 'قبول کریں');
+      expect(tr('svc_noServices'), 'اس زمرے میں ابھی کوئی سروس نہیں۔');
+      expect(tr('prv_perJob'), 'فی کام');
+      expect(tr('ltm_myLocation'), 'میری لوکیشن');
+      expect(tr('jr_title'), 'کام کا راستہ');
+      expect(tr('pp_confirm'), 'اس لوکیشن کی تصدیق کریں');
+      expect(tr('trk_title'), 'بکنگ ٹریک کریں');
+      expect(tr('chat_typeMessage'), 'پیغام لکھیں…');
+      // Placeholders fill and leave no braces behind.
+      final id = trf('trk_bookingId', {'id': 'abc123'});
+      expect(id, contains('abc123'));
+      expect(id, isNot(contains('{id}')));
+      // Leave the singleton in English for other tests.
+      await service.setLanguage(kLanguageEnglish);
+    });
+
     test('tr() falls back to the key for unknown keys', () {
       expect(tr('no_such_key_xyz'), 'no_such_key_xyz');
     });

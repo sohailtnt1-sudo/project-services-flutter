@@ -825,6 +825,76 @@ Future<List<Map<String, dynamic>>> fetchMyReviews() async {
   return (res as List).cast<Map<String, dynamic>>();
 }
 
+/// The customer's own review for one booking, if any (one review per
+/// booking — unique index idx_reviews_one_per_booking). Null when the
+/// booking has not been rated yet.
+Future<Map<String, dynamic>?> fetchReviewForBooking(
+    String bookingId) async {
+  final res = await db
+      .from('reviews')
+      .select('id, rating, comment, created_at')
+      .eq('booking_id', bookingId)
+      .maybeSingle();
+  return res as Map<String, dynamic>?;
+}
+
+/// Submit the customer's rating for a completed booking. The RLS
+/// policy reviews_insert_own requires customer_id = auth.uid() and
+/// that the booking belongs to the customer; the UI only offers this
+/// on completed bookings owned by the current user (see
+/// shouldShowRatingCard). A second insert for the same booking fails
+/// on the unique index (Postgres 23505) — the caller surfaces that as
+/// "already rated".
+Future<void> submitReview({
+  required String bookingId,
+  required String providerId,
+  required int rating,
+  String? comment,
+}) async {
+  final user = db.auth.currentUser!;
+  await db.from('reviews').insert(buildReviewInsert(
+        bookingId: bookingId,
+        customerId: user.id,
+        providerId: providerId,
+        rating: rating,
+        comment: comment,
+      ));
+}
+
+// ---------- Complaints ----------
+
+/// The customer's complaint for one booking, if any. The complaints
+/// table has no unique index on booking_id, so the newest row wins if
+/// more than one ever exists (the UI prevents filing a second one).
+Future<Map<String, dynamic>?> fetchComplaintForBooking(
+    String bookingId) async {
+  final res = await db
+      .from('complaints')
+      .select('id, complaint_text, status, resolution, created_at')
+      .eq('booking_id', bookingId)
+      .order('created_at', ascending: false)
+      .limit(1)
+      .maybeSingle();
+  return res as Map<String, dynamic>?;
+}
+
+/// File a complaint for a booking the customer owns. The RLS policy
+/// complaints_insert_own requires customer_id = auth.uid() and that the
+/// booking belongs to the customer. Status starts 'open' (DB default).
+Future<void> submitComplaint({
+  required String bookingId,
+  required String? providerId,
+  required String complaintText,
+}) async {
+  final user = db.auth.currentUser!;
+  await db.from('complaints').insert(buildComplaintInsert(
+        bookingId: bookingId,
+        customerId: user.id,
+        providerId: providerId,
+        complaintText: complaintText,
+      ));
+}
+
 // ---------- FCM device tokens ----------
 
 /// Save (or refresh) this device's FCM push token for the signed-in user.

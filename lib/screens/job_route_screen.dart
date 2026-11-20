@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../services/location_service.dart';
@@ -102,7 +103,7 @@ List<String> geocodeQueryCandidates(String text, String? city) {
       : (booking.pickupShopName != null &&
               booking.pickupShopName!.trim().isNotEmpty)
           ? booking.pickupShopName!.trim()
-          : 'Pickup point';
+          : tr('jr_pickupPoint');
   final addressLabel = (address?.addressLine != null &&
           address!.addressLine!.isNotEmpty)
       ? address.addressLine!
@@ -179,7 +180,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
       get _resolvedDestination => _searchedDestination != null
           ? (
               destination: _searchedDestination,
-              label: _searchedLabel ?? 'Searched place',
+              label: _searchedLabel ?? tr('jr_searchedPlace'),
               isPickup: false,
             )
           : resolveRouteDestination(
@@ -366,7 +367,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
       _searching = false;
       _suggestions = results;
       if (results.isEmpty) {
-        _searchError = 'No places found — try another search.';
+        _searchError = tr('jr_noPlacesFound');
       }
     });
   }
@@ -433,9 +434,8 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
     if (!mounted) return;
     if (pos == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Location permission nahi mili — apni location nahi dikhayi ja sakti'),
+        SnackBar(
+          content: Text(tr('jr_locationPermissionDenied')),
         ),
       );
       return;
@@ -475,14 +475,14 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
     final showNoCoordsNote =
         !_hasDestinationCoords && _destinationLabel != kNoPinMessage;
     return Scaffold(
-      appBar: AppBar(title: const Text('Job route')),
+      appBar: AppBar(title: Text(tr('jr_title'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _loadError != null
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Text('Could not load the route: $_loadError'),
+                    child: Text(trf('jr_loadError', {'error': '$_loadError'})),
                   ),
                 )
               : SingleChildScrollView(
@@ -516,21 +516,26 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                               if (b.providerName != null)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
-                                  child: Text('Customer: ${b.providerName}'),
+                                  child: Text(trf('jr_customer', {'name': b.providerName ?? ''})),
                                 ),
                               if (b.scheduledAt != null)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
-                                    'Scheduled: ${b.scheduledAt!.day}/${b.scheduledAt!.month}/${b.scheduledAt!.year} '
-                                    '${b.scheduledAt!.hour}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}',
+                                    trf('jr_scheduled', {
+                                      'date':
+                                          '${b.scheduledAt!.day}/${b.scheduledAt!.month}/${b.scheduledAt!.year} '
+                                              '${b.scheduledAt!.hour}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}',
+                                    }),
                                     style: const TextStyle(
                                         color: AppColors.inkSoft),
                                   ),
                                 ),
                               const SizedBox(height: 8),
                               Text(
-                                _destinationLabel,
+                                _destinationLabel == kNoPinMessage
+                                    ? tr('jr_noPin')
+                                    : _destinationLabel,
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold),
                               ),
@@ -538,7 +543,11 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                                 Padding(
                                   padding: const EdgeInsets.only(top: 6),
                                   child: Text(
-                                    '${_route!.distanceKm.toStringAsFixed(1)} km · ETA ~${_route!.durationLabel}',
+                                    trf('jr_distanceEta', {
+                                      'distance': _route!.distanceKm
+                                          .toStringAsFixed(1),
+                                      'duration': _route!.durationLabel,
+                                    }),
                                     style: const TextStyle(
                                         color: AppColors.teal,
                                         fontWeight: FontWeight.bold),
@@ -559,7 +568,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                         child: TextField(
                           controller: _search,
                           decoration: InputDecoration(
-                            hintText: 'Search a place — Askari Mall…',
+                            hintText: tr('jr_searchHint'),
                             prefixIcon: const Icon(Icons.search),
                             suffixIcon: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -567,7 +576,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                                 if (_searchedDestination != null)
                                   IconButton(
                                     icon: const Icon(Icons.clear),
-                                    tooltip: 'Clear searched place',
+                                    tooltip: tr('jr_clearSearch'),
                                     onPressed: _clearSearchedPlace,
                                   ),
                                 _searching
@@ -685,9 +694,9 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
-                                                child: const Text(
-                                                  'You',
-                                                  style: TextStyle(
+                                                child: Text(
+                                                  tr('jr_you'),
+                                                  style: const TextStyle(
                                                       color: Colors.white,
                                                       fontSize: 11,
                                                       fontWeight:
@@ -727,7 +736,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                                   child: IconButton(
                                     icon: const Icon(Icons.my_location,
                                         color: AppColors.teal),
-                                    tooltip: 'My location',
+                                    tooltip: tr('jr_myLocation'),
                                     onPressed: _goToMyLocation,
                                   ),
                                 ),
@@ -740,7 +749,7 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(
-                            'Pickup: $_destinationLabel',
+                            trf('jr_pickup', {'label': _destinationLabel}),
                             style: const TextStyle(color: AppColors.inkSoft),
                           ),
                         )
@@ -749,36 +758,37 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(
-                            'Destination: ${_address!.addressLine!}'
-                            '${_address!.city != null ? ' · ${_address!.city}' : ''}',
+                            trf('jr_destination',
+                                        {'address': _address!.addressLine!}) +
+                                    '${_address!.city != null ? ' · ${_address!.city}' : ''}',
                             style: const TextStyle(color: AppColors.inkSoft),
                           ),
                         ),
                       if (showFallbackNote)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
                           child: Text(
-                            'Route nahi mil saka — seedhi line dikhayi ja rahi hai',
-                            style: TextStyle(color: AppColors.amberDark),
+                            tr('jr_routeFallback'),
+                            style: const TextStyle(color: AppColors.amberDark),
                           ),
                         ),
                       if (showNoCoordsNote)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
                           child: Text(
-                            'Is address ke coordinates nahi hain — upar diya gaya address parh kar jayein',
-                            style: TextStyle(color: AppColors.amberDark),
+                            tr('jr_noCoords'),
+                            style: const TextStyle(color: AppColors.amberDark),
                           ),
                         ),
                       const SizedBox(height: 16),
                       // ---- Live location sharing ----
                       if (!_jobActive)
-                        const Card(
+                        Card(
                           child: Padding(
-                            padding: EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(16),
                             child: Text(
-                              'Job complete ya cancel ho gaya hai — live location sharing band hai.',
-                              style: TextStyle(color: AppColors.inkSoft),
+                              tr('jr_jobNotActive'),
+                              style: const TextStyle(color: AppColors.inkSoft),
                             ),
                           ),
                         )
@@ -793,8 +803,8 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                                   : Icons.share_location,
                             ),
                             label: Text(_sharing
-                                ? 'Stop live location'
-                                : 'Share live location'),
+                                ? tr('jr_stopSharing')
+                                : tr('jr_shareLive')),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -811,7 +821,9 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                                     color: AppColors.green, size: 12),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Sharing live • updated ${_timeLabel(_lastSharedAt!)}',
+                                  trf('jr_sharingLive', {
+                                    'time': _timeLabel(_lastSharedAt!),
+                                  }),
                                   style: const TextStyle(
                                       color: AppColors.green,
                                       fontWeight: FontWeight.bold),
@@ -820,18 +832,18 @@ class _JobRouteScreenState extends State<JobRouteScreen> {
                             ),
                           ),
                         if (!_permissionOk)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              'Location permission nahi hai — Settings se location on karein',
-                              style: TextStyle(color: AppColors.red),
+                              tr('jr_noPermission'),
+                              style: const TextStyle(color: AppColors.red),
                             ),
                           ),
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
                           child: Text(
-                            'Customer ko aapki live location sirf is job ke doran dikhayi jati hai.',
-                            style: TextStyle(
+                            tr('jr_sharingNote'),
+                            style: const TextStyle(
                                 color: AppColors.inkSoft, fontSize: 13),
                           ),
                         ),

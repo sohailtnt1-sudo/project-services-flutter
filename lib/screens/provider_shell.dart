@@ -86,7 +86,7 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update availability: $e')),
+          SnackBar(content: Text(trf('pv_availabilityError', {'error': e.toString()}))),
         );
       }
     } finally {
@@ -104,7 +104,7 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snap.hasError) return Center(child: Text('Could not load profile: ${snap.error}'));
+          if (snap.hasError) return Center(child: Text(trf('pv_loadProfileError', {'error': snap.error.toString()})));
           final p = snap.data;
           if (p == null) {
             return Center(
@@ -166,11 +166,11 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(widget.profile.fullName ?? 'Provider',
+                                  Text(widget.profile.fullName ?? tr('provider'),
                                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                  Text('${p['experience_years'] ?? 0} yrs experience'
+                                  Text('${trf('cs_yearsExperience', {'years': '${p['experience_years'] ?? 0}'})}'
                                       '${p['city'] != null ? ' · ${p['city']}' : ''}'),
-                                  if (rating > 0) Text('★ $rating average rating'),
+                                  if (rating > 0) Text(trf('pv_averageRating', {'rating': '$rating'})),
                                 ],
                               ),
                             ),
@@ -279,7 +279,7 @@ class _WalletSection extends StatelessWidget {
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('Could not load wallet: ${snap.error}'),
+              child: Text(trf('pv_loadWalletError', {'error': snap.error.toString()})),
             ),
           );
         }
@@ -296,7 +296,7 @@ class _WalletSection extends StatelessWidget {
                   children: [
                     const Icon(Icons.account_balance_wallet, color: AppColors.teal),
                     const SizedBox(width: 8),
-                    const Text('My wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(tr('pv_myWallet'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     const Spacer(),
                     Text(
                       formatRs(wallet.balance),
@@ -311,13 +311,13 @@ class _WalletSection extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   hasDues
-                      ? '${formatRs(wallet.dues)} dues — clear your dues to keep accepting jobs.'
-                      : 'Prepaid balance. The 15% platform fee is deducted from this wallet when a job completes.',
+                      ? trf('pv_duesNote', {'amount': formatRs(wallet.dues)})
+                      : tr('pv_walletNote'),
                   style: TextStyle(color: hasDues ? AppColors.red : AppColors.inkSoft),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'If your dues go over Rs. ${kWalletDuesLimitRs.toInt()} you cannot accept new jobs until you pay.',
+                  trf('pv_duesLimit', {'limit': '${kWalletDuesLimitRs.toInt()}'}),
                   style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
                 ),
                 const SizedBox(height: 10),
@@ -327,16 +327,13 @@ class _WalletSection extends StatelessWidget {
                     color: AppColors.sand,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Text(
-                    'To top up: send money via JazzCash / EasyPaisa to the platform account '
-                    '(JazzCash: 03078110561) and share the '
-                    'transaction reference with the admin. The admin verifies it and adds '
-                    'the amount to your wallet.',
-                    style: TextStyle(fontSize: 13),
+                  child: Text(
+                    tr('pv_topUpNote'),
+                    style: const TextStyle(fontSize: 13),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text('Recent activity', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(tr('pv_recentActivity'), style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 FutureBuilder<List<WalletTransaction>>(
                   future: transactionsFuture,
@@ -351,8 +348,8 @@ class _WalletSection extends StatelessWidget {
                     }
                     final list = tsnap.data ?? [];
                     if (list.isEmpty) {
-                      return const Text('No wallet activity yet.',
-                          style: TextStyle(color: AppColors.inkSoft));
+                      return Text(tr('pv_noWalletActivity'),
+                          style: const TextStyle(color: AppColors.inkSoft));
                     }
                     return Column(
                       children: list
@@ -437,10 +434,10 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snap.hasError) return Center(child: Text('Could not load jobs: ${snap.error}'));
+          if (snap.hasError) return Center(child: Text(trf('pv_loadJobsError', {'error': snap.error.toString()})));
           final jobs = snap.data ?? [];
           if (jobs.isEmpty) {
-            return const Center(child: Text('No jobs assigned yet.'));
+            return Center(child: Text(tr('pv_noJobsAssigned')));
           }
           return RefreshIndicator(
             onRefresh: () async => _refresh(),
@@ -543,16 +540,12 @@ class _JobTileState extends State<_JobTile> {
             await showDialog<void>(
               context: context,
               builder: (ctx) => AlertDialog(
-                title: const Text('Dues need clearing'),
-                content: const Text(
-                  'Your unpaid platform dues are over Rs. 2,000, so you cannot accept new jobs yet. '
-                  'Send the payment via JazzCash / EasyPaisa and share the transaction reference with the admin — '
-                  'once the admin adds it to your wallet, you can accept jobs again.',
-                ),
+                title: Text(tr('pv_duesTitle')),
+                content: Text(tr('pv_duesDialog')),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('OK'),
+                    child: Text(tr('pv_ok')),
                   ),
                 ],
               ),
@@ -597,10 +590,9 @@ class _JobTileState extends State<_JobTile> {
       if (status == 'on_the_way' && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
-                'Live location sharing on karne ke liye Route kholein'),
+            content: Text(tr('pv_openRouteNote')),
             action: SnackBarAction(
-              label: 'Route kholein',
+              label: tr('pv_openRoute'),
               onPressed: () {
                 // Dismiss first: the root ScaffoldMessenger keeps this
                 // snackbar visible after navigation, so without this the
@@ -621,8 +613,8 @@ class _JobTileState extends State<_JobTile> {
         // The database trigger rejects an accept over the dues limit;
         // show that as a dues message, not a generic error.
         final msg = e.toString().contains('dues exceed')
-            ? 'Your dues are over Rs. 2,000 — clear them before accepting new jobs.'
-            : 'Could not update job: $e';
+            ? tr('pv_duesOverLimit')
+            : trf('pv_updateJobError', {'error': e.toString()});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(msg)),
         );
@@ -638,29 +630,36 @@ class _JobTileState extends State<_JobTile> {
     final actions = <Widget>[];
     if (b.status == 'pending') {
       actions.addAll([
-        ElevatedButton(onPressed: _busy ? null : () => _setStatus('accepted'), child: const Text('Accept')),
+        ElevatedButton(onPressed: _busy ? null : () => _setStatus('accepted'), child: Text(tr('pv_accept'))),
         const SizedBox(width: 8),
-        OutlinedButton(onPressed: _busy ? null : () => _setStatus('rejected'), child: const Text('Reject')),
+        OutlinedButton(onPressed: _busy ? null : () => _setStatus('rejected'), child: Text(tr('pv_reject'))),
       ]);
     } else if (b.status == 'accepted' || b.status == 'confirmed') {
       actions.add(ElevatedButton(
-          onPressed: _busy ? null : () => _setStatus('on_the_way'), child: const Text('Start — on my way')));
+          onPressed: _busy ? null : () => _setStatus('on_the_way'), child: Text(tr('pv_startOnWay'))));
     } else if (b.status == 'on_the_way') {
       actions.add(ElevatedButton(
-          onPressed: _busy ? null : () => _setStatus('in_progress'), child: const Text('Work started')));
+          onPressed: _busy ? null : () => _setStatus('in_progress'), child: Text(tr('pv_workStarted'))));
     } else if (b.status == 'in_progress') {
       actions.add(ElevatedButton(
-          onPressed: _busy ? null : () => _setStatus('completed'), child: const Text('Mark completed')));
+          onPressed: _busy ? null : () => _setStatus('completed'), child: Text(tr('pv_markCompleted'))));
     }
     // Route + live location sharing for active jobs.
     if (kActiveJobStatuses.contains(b.status)) {
       if (actions.isNotEmpty) actions.add(const SizedBox(width: 8));
       actions.add(OutlinedButton.icon(
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => JobRouteScreen(booking: b),
-        )),
+        onPressed: () {
+          // Dismiss the "Route kholein" nudge first: the root
+          // ScaffoldMessenger keeps it visible after navigation, so
+          // without this it sticks to the route screen itself (seen
+          // 20 Nov 2026 — the snackbar rode along onto Job route).
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => JobRouteScreen(booking: b),
+          ));
+        },
         icon: const Icon(Icons.route, size: 18),
-        label: const Text('Route'),
+        label: Text(tr('pv_route')),
       ));
     }
     return Card(
@@ -683,15 +682,14 @@ class _JobTileState extends State<_JobTile> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  'Scheduled: ${b.scheduledAt!.day}/${b.scheduledAt!.month}/${b.scheduledAt!.year} '
-                  '${b.scheduledAt!.hour}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}',
+                  trf('pv_scheduled', {'date': '${b.scheduledAt!.day}/${b.scheduledAt!.month}/${b.scheduledAt!.year}', 'time': '${b.scheduledAt!.hour}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}'}),
                   style: const TextStyle(color: AppColors.inkSoft),
                 ),
               ),
             if (b.estimatedPrice != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('Job value: ${formatRs(b.estimatedPrice!)} · You receive ${formatRs((b.estimatedPrice! * 0.85).round())} after 15% fee'),
+                child: Text(trf('pv_jobValue', {'value': formatRs(b.estimatedPrice!), 'receive': formatRs((b.estimatedPrice! * 0.85).round())})),
               ),
             if (b.cashReceivedAmount != null)
               Padding(
@@ -711,7 +709,7 @@ class _JobTileState extends State<_JobTile> {
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => TrackingScreen(booking: b),
               )),
-              child: const Text('View details'),
+              child: Text(tr('pv_viewDetails')),
             ),
           ],
         ),
@@ -763,18 +761,18 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
                   children: [
                     Row(
                       children: [
-                        Expanded(child: _statCard('Total earned', formatRs(earned))),
+                        Expanded(child: _statCard(tr('pv_totalEarned'), formatRs(earned))),
                         const SizedBox(width: 12),
-                        Expanded(child: _statCard('Platform fee (15%)', formatRs(commission))),
+                        Expanded(child: _statCard(tr('platformFee'), formatRs(commission))),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    _statCard('Completed jobs', '$jobs'),
+                    _statCard(tr('pv_completedJobs'), '$jobs'),
                     if (jobs == 0)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 12),
-                        child: Text('No completed jobs yet. Your earnings will appear here once jobs are completed.',
-                            style: TextStyle(color: AppColors.inkSoft)),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(tr('pv_noCompletedJobs'),
+                            style: const TextStyle(color: AppColors.inkSoft)),
                       ),
                   ],
                 );
@@ -790,7 +788,7 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (jsnap.hasError) {
-                  return Text('Could not load per-job earnings: ${jsnap.error}',
+                  return Text(trf('pv_loadPerJobEarningsError', {'error': jsnap.error.toString()}),
                       style: const TextStyle(color: AppColors.inkSoft));
                 }
                 final jobs = jsnap.data ?? [];
@@ -828,7 +826,7 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
               },
             ),
             const SizedBox(height: 20),
-            const Text('Customer reviews', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(tr('pv_customerReviews'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             FutureBuilder<List<Map<String, dynamic>>>(
               future: _reviews,
@@ -837,12 +835,12 @@ class _ProviderEarningsTabState extends State<_ProviderEarningsTab> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final list = snap.data ?? [];
-                if (list.isEmpty) return const Text('No reviews yet.');
+                if (list.isEmpty) return Text(tr('pv_noReviews'));
                 return Column(
                   children: list.map((r) {
                     final name = r['profiles'] is Map<String, dynamic>
-                        ? (r['profiles'] as Map<String, dynamic>)['full_name'] as String? ?? 'Customer'
-                        : 'Customer';
+                        ? (r['profiles'] as Map<String, dynamic>)['full_name'] as String? ?? tr('customer')
+                        : tr('customer');
                     return Card(
                       child: ListTile(
                         title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -948,7 +946,7 @@ class _ProviderProfileTabState extends State<_ProviderProfileTab> {
                   await updateMyPhone(savedPhone!);
                   if (context.mounted) Navigator.of(context).pop(true);
                 } catch (e) {
-                  setDialogState(() => error = 'Could not save: $e');
+                  setDialogState(() => error = trf('pv_saveMobileError', {'error': e.toString()}));
                 }
               },
               child: Text(tr('save')),
@@ -994,11 +992,11 @@ class _ProviderProfileTabState extends State<_ProviderProfileTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(profile.fullName ?? 'Provider',
+                          Text(profile.fullName ?? tr('provider'),
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                           Text(profile.email, style: const TextStyle(color: AppColors.inkSoft)),
                           if (_phone != null) Text(_phone!, style: const TextStyle(color: AppColors.inkSoft)),
-                          const Chip(label: Text('provider'), backgroundColor: AppColors.tealLight),
+                          Chip(label: Text(tr('provider')), backgroundColor: AppColors.tealLight),
                         ],
                       ),
                     ),

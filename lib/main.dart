@@ -32,10 +32,20 @@ class ProjectServicesApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // Rebuild the whole app when the language changes, so every
     // tr('…') string on screen switches immediately.
+    //
+    // The ValueKey is essential, not cosmetic: without it, `home` is the
+    // same `const AuthGate()` instance on every rebuild, and Flutter
+    // short-circuits identical widgets — the AuthGate subtree is never
+    // re-invoked, tr() is never re-evaluated, and the visible screen stays
+    // in the old language even though the service value changed (20 Nov:
+    // tapping Urdu changed nothing, not even the bottom tabs). Keying
+    // MaterialApp on the language forces the whole subtree — Navigator,
+    // routes and all — to be rebuilt in the new language.
     return ValueListenableBuilder<String>(
       valueListenable: languageService,
       builder: (context, lang, _) {
         return MaterialApp(
+          key: ValueKey(lang),
           title: tr('appName'),
           locale: Locale(lang),
           theme: buildTheme(),

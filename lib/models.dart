@@ -1,4 +1,5 @@
 // Data models matching the Supabase tables (see website migration 001/002).
+import 'l10n/strings.dart';
 class Category {
   final String id;
   final String name;
@@ -381,6 +382,90 @@ Map<String, dynamic> buildCashCompletionUpdate(num amount) => {
       'cash_received_amount': amount,
     };
 
+/// Customer rating for a completed booking.
+///
+/// Whether the "Rate provider" card shows on the booking details
+/// screen: only the booking's own customer, only once the job is
+/// completed, only when a provider was assigned, and only while no
+/// review exists yet for this booking. (The DB also enforces one
+/// review per booking with the unique index idx_reviews_one_per_booking,
+/// and the RLS policy reviews_insert_own only lets the booking's
+/// customer insert — this is the matching UI-side gate.)
+bool shouldShowRatingCard({
+  required Booking booking,
+  required String currentUserId,
+  required bool hasReview,
+}) =>
+    booking.status == 'completed' &&
+    booking.customerId == currentUserId &&
+    booking.providerId != null &&
+    !hasReview;
+
+/// The review row the customer submits. Rating is 1-5 (CHECK
+/// constraint in the DB); an empty comment is stored as NULL, not ''.
+Map<String, dynamic> buildReviewInsert({
+  required String bookingId,
+  required String customerId,
+  required String providerId,
+  required int rating,
+  String? comment,
+}) =>
+    {
+      'booking_id': bookingId,
+      'customer_id': customerId,
+      'provider_id': providerId,
+      'rating': rating,
+      'comment': (comment == null || comment.trim().isEmpty)
+          ? null
+          : comment.trim(),
+    };
+
+/// Complaint status labels for the customer-facing complaint card and
+/// the admin view. The DB CHECK constraint allows only these four.
+String complaintStatusLabel(String status) {
+  switch (status) {
+    case 'open':
+      return 'Open';
+    case 'in_review':
+      return 'In review';
+    case 'resolved':
+      return 'Resolved';
+    case 'closed':
+      return 'Closed';
+    default:
+      return status;
+  }
+}
+
+/// Whether the "Report a problem" card shows on the booking details
+/// screen: only the booking's own customer, and only while no complaint
+/// exists yet for this booking. The complaints table has NO unique
+/// constraint on booking_id, so this UI-side gate is what prevents a
+/// second complaint for the same booking (the RLS policy
+/// complaints_insert_own only lets the booking's customer insert).
+bool shouldShowComplaintCard({
+  required Booking booking,
+  required String currentUserId,
+  required bool hasComplaint,
+}) =>
+    booking.customerId == currentUserId && !hasComplaint;
+
+/// The complaint row the customer files. providerId may be null when no
+/// technician was assigned yet; the complaint text is required and
+/// trimmed (empty text is rejected by the UI before this is built).
+Map<String, dynamic> buildComplaintInsert({
+  required String bookingId,
+  required String customerId,
+  required String? providerId,
+  required String complaintText,
+}) =>
+    {
+      'booking_id': bookingId,
+      'customer_id': customerId,
+      'provider_id': providerId,
+      'complaint_text': complaintText.trim(),
+    };
+
 /// Per-job earnings for one completed booking (provider Earnings tab).
 /// [jobValue] is what the job was worth, [commission] is the 15%
 /// platform fee charged on it (from commission_ledger), and [earning]
@@ -493,18 +578,25 @@ class ServiceAddress {
 }
 
 /// Booking status labels + the ordered timeline used on the tracking screen.
-const bookingStatusLabels = <String, String>{
-  'pending': 'Pending',
-  'accepted': 'Accepted',
-  'rejected': 'Rejected',
-  'confirmed': 'Confirmed',
-  'on_the_way': 'On the way',
-  'in_progress': 'Work started',
-  'completed': 'Completed',
-  'cancelled': 'Cancelled',
-  'disputed': 'Disputed',
+/// Booking status code → l10n key (see statusLabel below).
+const _statusLabelKeys = <String, String>{
+  'pending': 'status_pending',
+  'accepted': 'status_accepted',
+  'rejected': 'status_rejected',
+  'confirmed': 'status_confirmed',
+  'on_the_way': 'status_on_the_way',
+  'in_progress': 'status_in_progress',
+  'completed': 'status_completed',
+  'cancelled': 'status_cancelled',
+  'disputed': 'status_disputed',
 };
 
 const bookingTimeline = ['pending', 'accepted', 'on_the_way', 'in_progress', 'completed'];
 
-String statusLabel(String s) => bookingStatusLabels[s] ?? s;
+/// Translated booking status label — follows the app language through
+/// tr(). Unknown codes fall back to the raw code, as before.
+String statusLabel(String s) {
+  final key = _statusLabelKeys[s];
+  if (key == null) return s;
+  return tr(key);
+}

@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../l10n/strings.dart';
 import '../services/location_service.dart';
 import '../services/map_api.dart';
 import '../theme.dart';
@@ -121,9 +122,8 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
     if (!mounted) return;
     if (pos == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Location permission nahi mili — city centre dikhaya ja raha hai'),
+        SnackBar(
+          content: Text(tr('pp_locationPermissionDenied')),
         ),
       );
       return;
@@ -145,7 +145,7 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
       _searching = false;
       _suggestions = results;
       if (results.isEmpty) {
-        _searchError = 'No places found — try another search.';
+        _searchError = tr('pp_noPlacesFound');
       }
     });
   }
@@ -164,11 +164,11 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pick location on map'),
+        title: Text(tr('pp_title')),
         actions: [
           IconButton(
             icon: const Icon(Icons.my_location),
-            tooltip: 'Use my location',
+            tooltip: tr('pp_useMyLocation'),
             onPressed: _useMyLocation,
           ),
         ],
@@ -218,7 +218,7 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
                   child: TextField(
                     controller: _search,
                     decoration: InputDecoration(
-                      hintText: 'Search a place — Airport Road…',
+                      hintText: tr('pp_searchHint'),
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searching
                           ? const Padding(
@@ -303,8 +303,8 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
                         Expanded(
                           child: Text(
                             _pin == null
-                                ? 'Map pe tap kar ke pin lagayein'
-                                : 'Pin lag gaya — address check kar lein',
+                                ? tr('pp_tapToPin')
+                                : tr('pp_pinPlaced'),
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold),
                           ),
@@ -320,23 +320,23 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: _address,
-                      decoration: const InputDecoration(
-                        hintText: 'Address (edit kar sakte hain)',
+                      decoration: InputDecoration(
+                        hintText: tr('pp_addressHint'),
                       ),
                     ),
                     if (_addressFailed)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 6),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
                         child: Text(
-                          'Address nahi mil saka — khud likh lein',
-                          style: TextStyle(
+                          tr('pp_addressFailed'),
+                          style: const TextStyle(
                               fontSize: 12, color: AppColors.red),
                         ),
                       ),
                     const SizedBox(height: 12),
                     ElevatedButton(
                       onPressed: _pin == null ? null : _confirm,
-                      child: const Text('Confirm this location'),
+                      child: Text(tr('pp_confirm')),
                     ),
                   ],
                 ),

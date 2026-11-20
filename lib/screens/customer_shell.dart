@@ -155,7 +155,7 @@ class _HomeTabState extends State<_HomeTab> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _mapError = 'Could not load technician locations: $e');
+      setState(() => _mapError = trf('cs_loadLocationsError', {'error': e.toString()}));
     }
   }
 
@@ -171,9 +171,8 @@ class _HomeTabState extends State<_HomeTab> {
     if (pos == null) {
       if (!initial) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Location permission nahi mili — city centre dikhaya ja raha hai'),
+          SnackBar(
+            content: Text(tr('cs_locationDenied')),
           ),
         );
       }
@@ -300,7 +299,7 @@ class _HomeTabState extends State<_HomeTab> {
                   ));
                 }
                 if (snap.hasError) {
-                  return _errorBox('Could not load categories: ${snap.error}');
+                  return _errorBox(trf('cs_loadCategoriesError', {'error': snap.error.toString()}));
                 }
                 final cats = snap.data ?? [];
                 if (cats.isEmpty) return Text(tr('noCategories'));
@@ -412,7 +411,7 @@ class _HomeTabState extends State<_HomeTab> {
                         child: IconButton(
                           icon: const Icon(Icons.my_location,
                               color: AppColors.teal),
-                          tooltip: 'My location',
+                          tooltip: tr('cs_myLocation'),
                           onPressed: () => _locateMe(),
                         ),
                       ),
@@ -422,6 +421,10 @@ class _HomeTabState extends State<_HomeTab> {
               ),
             ),
             const SizedBox(height: 8),
+            // Radius chips on their own row: the count text used to sit
+            // in this Row after a Spacer and the row overflowed by
+            // 120 px on the right (seen 20 Nov 2026). The count now
+            // lives on its own line below and wraps freely.
             Row(
               children: [
                 Text(tr('within'),
@@ -438,20 +441,20 @@ class _HomeTabState extends State<_HomeTab> {
                       },
                     ),
                   ),
-                const Spacer(),
-                Text(
-                  '${_visibleMarkers.length} technicians within ${_radiusKm.toInt()} km',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.inkSoft),
-                ),
               ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              trf('cs_techniciansWithin', {'count': '${_visibleMarkers.length}', 'radius': '${_radiusKm.toInt()}'}),
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.inkSoft),
             ),
             if (_mapError != null) ...[
               const SizedBox(height: 6),
               Text(_mapError!,
                   style: const TextStyle(fontSize: 12, color: AppColors.red)),
             ],
-            Text('OpenStreetMap — technicians serve ${widget.city} and nearby areas.',
+            Text(trf('cs_mapNote', {'city': widget.city}),
                 style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
             const SizedBox(height: 20),
             Text(trf('recommendedTechnicians', {'city': widget.city}),
@@ -467,7 +470,7 @@ class _HomeTabState extends State<_HomeTab> {
                   ));
                 }
                 if (snap.hasError) {
-                  return _errorBox('Could not load technicians: ${snap.error}');
+                  return _errorBox(trf('cs_loadTechniciansError', {'error': snap.error.toString()}));
                 }
                 final list = snap.data ?? [];
                 if (list.isEmpty) {
@@ -475,7 +478,7 @@ class _HomeTabState extends State<_HomeTab> {
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                          'No verified technicians in ${widget.city} yet. Technicians appear here once an admin approves them.'),
+                          trf('cs_noTechniciansCity', {'city': widget.city})),
                     ),
                   );
                 }
@@ -485,9 +488,9 @@ class _HomeTabState extends State<_HomeTab> {
               },
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Cash on delivery. The platform adds a 15% service fee on the job price — shown before you confirm.',
-              style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+            Text(
+              tr('cs_codFeeNote'),
+              style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
             ),
           ],
         ),
@@ -534,7 +537,7 @@ class _HomeTabState extends State<_HomeTab> {
             ),
             const SizedBox(height: 10),
             Text(
-              '${p.experienceYears} yrs experience'
+              '${trf('cs_yearsExperience', {'years': '${p.experienceYears}'})}'
               '${p.city != null ? ' · ${p.city}' : ''}'
               '${p.averageRating > 0 ? ' · ★ ${p.averageRating}' : ''}',
               style: const TextStyle(color: AppColors.inkSoft),
@@ -542,8 +545,8 @@ class _HomeTabState extends State<_HomeTab> {
             const SizedBox(height: 6),
             Text(
               p.price != null
-                  ? 'Charges: ${formatRs(p.price!)}'
-                  : 'Charges on booking',
+                  ? trf('cs_charges', {'amount': formatRs(p.price!)})
+                  : tr('cs_chargesOnBooking'),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             if (p.bio != null && p.bio!.isNotEmpty) ...[
@@ -578,7 +581,7 @@ class _HomeTabState extends State<_HomeTab> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Book ${p.name} for',
+              Text(trf('cs_bookFor', {'name': p.name}),
                   style: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
@@ -597,16 +600,16 @@ class _HomeTabState extends State<_HomeTab> {
                       return Padding(
                         padding: const EdgeInsets.all(12),
                         child: Text(
-                          'Could not load services: ${snap.error}',
+                          trf('cs_loadServicesError', {'error': snap.error.toString()}),
                           style: const TextStyle(color: AppColors.red),
                         ),
                       );
                     }
                     final services = snap.data ?? [];
                     if (services.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('No services available yet.'),
+                      return Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(tr('noServices')),
                       );
                     }
                     return ListView.builder(
@@ -721,7 +724,7 @@ class _CategoryCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(category.description ?? 'Professional home service',
+                    Text(category.description ?? tr('cs_categoryDefaultDesc'),
                         style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
@@ -779,7 +782,7 @@ class _ProviderTile extends StatelessWidget {
           ],
         ),
         subtitle: Text(
-          '${provider.experienceYears} yrs experience'
+          '${trf('cs_yearsExperience', {'years': '${provider.experienceYears}'})}'
           '${provider.city != null ? ' · ${provider.city}' : ''}'
           '${provider.averageRating > 0 ? ' · ★ ${provider.averageRating}' : ''}',
         ),
@@ -799,9 +802,9 @@ class _SearchResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Results for "$query"')),
+      appBar: AppBar(title: Text(trf('cs_searchResults', {'query': query}))),
       body: results.isEmpty
-          ? const Center(child: Text('No services found.'))
+          ? Center(child: Text(tr('cs_noServicesFound')))
           : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: results.length,
@@ -854,7 +857,7 @@ class _CategoriesTabState extends State<_CategoriesTab> {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snap.hasError) return Center(child: Text('Could not load categories: ${snap.error}'));
+          if (snap.hasError) return Center(child: Text(trf('cs_loadCategoriesError', {'error': snap.error.toString()})));
           final cats = snap.data ?? [];
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -920,7 +923,7 @@ class _MyBookingsTabState extends State<_MyBookingsTab> {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snap.hasError) return Center(child: Text('Could not load bookings: ${snap.error}'));
+          if (snap.hasError) return Center(child: Text(trf('cs_loadBookingsError', {'error': snap.error.toString()})));
           final list = snap.data ?? [];
           if (list.isEmpty) {
             return Center(
@@ -1023,7 +1026,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(p.fullName ?? 'Customer',
+                          Text(p.fullName ?? tr('customer'),
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                           Text(p.email, style: const TextStyle(color: AppColors.inkSoft)),
                           if (p.phone != null) Text(p.phone!, style: const TextStyle(color: AppColors.inkSoft)),
@@ -1079,9 +1082,9 @@ class _ProfileTabState extends State<_ProfileTab> {
                     final booking = r['bookings'];
                     final serviceName = booking is Map<String, dynamic>
                         ? (booking['services'] is Map<String, dynamic>
-                            ? (booking['services'] as Map<String, dynamic>)['name'] as String? ?? 'Service'
-                            : 'Service')
-                        : 'Service';
+                            ? (booking['services'] as Map<String, dynamic>)['name'] as String? ?? tr('cs_serviceName')
+                            : tr('cs_serviceName'))
+                        : tr('cs_serviceName');
                     return Card(
                       child: ListTile(
                         title: Text(serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -1104,9 +1107,9 @@ class _ProfileTabState extends State<_ProfileTab> {
               ),
             ),
             const SizedBox(height: 8),
-            const Center(
-              child: Text('AsaanKaam v1.0.0 — Cash on delivery',
-                  style: TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+            Center(
+              child: Text(tr('cs_versionFooter'),
+                  style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
             ),
           ],
         ),

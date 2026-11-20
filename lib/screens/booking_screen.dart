@@ -106,7 +106,7 @@ class _BookingScreenState extends State<BookingScreen> {
     final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (file == null) return;
     if (_photos.length >= 5) {
-      setState(() => _error = 'You can attach up to 5 photos.');
+      setState(() => _error = tr('bk_photoLimit'));
       return;
     }
     setState(() {
@@ -172,17 +172,16 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _confirm() async {
     if (_description.text.trim().isEmpty) {
       setState(() => _error = _isDelivery
-          ? 'Please say what the rider should fetch.'
-          : 'Please describe the problem.');
+          ? tr('bk_describeFetch')
+          : tr('bk_describeProblem'));
       return;
     }
     if (_isDelivery && _pickupAddress.text.trim().isEmpty) {
-      setState(() => _error =
-          'Please add the pickup address — the shop or place the rider should collect the items from.');
+      setState(() => _error = tr('bk_pickupAddressRequired'));
       return;
     }
     if (_address.text.trim().isEmpty) {
-      setState(() => _error = 'Please enter your address.');
+      setState(() => _error = tr('bk_addressRequired'));
       return;
     }
     setState(() {
@@ -218,14 +217,14 @@ class _BookingScreenState extends State<BookingScreen> {
           // lets the customer retry. Do not fail the booking.
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Booking saved, but photos failed to upload: $e')),
+              SnackBar(content: Text(trf('bk_photosFailed', {'error': e.toString()}))),
             );
           }
         }
       }
       if (mounted) setState(() => _doneBookingId = bookingId);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not save the booking: $e');
+      if (mounted) setState(() => _error = trf('bk_saveFailed', {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -250,11 +249,11 @@ class _BookingScreenState extends State<BookingScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              Text('Booking ID: $_doneBookingId',
+              Text(trf('bk_bookingId', {'id': _doneBookingId!}),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: AppColors.inkSoft)),
               const SizedBox(height: 4),
-              Text('${s.name}${p != null ? ' with ${p.name}' : ''} · ${formatRs(_jobValue)} · Cash on delivery',
+              Text('${s.name}${p != null ? trf('bk_withProvider', {'name': p.name}) : ''} · ${formatRs(_jobValue)} · ${tr('bk_cashOnDelivery')}',
                   textAlign: TextAlign.center),
               const SizedBox(height: 24),
               ElevatedButton(
@@ -291,7 +290,7 @@ class _BookingScreenState extends State<BookingScreen> {
                         style: const TextStyle(color: AppColors.teal, fontWeight: FontWeight.bold)),
                   ),
                   title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('${p.experienceYears} yrs experience${p.city != null ? ' · ${p.city}' : ''}'),
+                  subtitle: Text('${trf('cs_yearsExperience', {'years': '${p.experienceYears}'})}${p.city != null ? ' · ${p.city}' : ''}'),
                   trailing: const Icon(Icons.verified, color: AppColors.teal),
                 ),
               )
@@ -311,8 +310,8 @@ class _BookingScreenState extends State<BookingScreen> {
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: _isDelivery
-                    ? 'e.g. Panadol tablets from the pharmacy, 1 kg tomatoes.'
-                    : 'e.g. The ceiling fan makes a loud noise and runs slowly.',
+                    ? tr('bk_fetchExample')
+                    : tr('bk_problemExample'),
               ),
             ),
             const SizedBox(height: 16),
@@ -368,7 +367,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 controller: _pickupShop,
                 decoration: InputDecoration(
                   labelText: tr('pickupShopName'),
-                  hintText: 'Example: Al-Shifa Pharmacy, Main Bazaar',
+                  hintText: tr('bk_pickupShopExample'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -377,7 +376,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 maxLines: 2,
                 decoration: InputDecoration(
                   labelText: tr('pickupAddress'),
-                  hintText: 'Shop 4, Main Bazaar Road',
+                  hintText: tr('bk_pickupAddressExample'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -392,8 +391,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   avatar: const Icon(Icons.location_on,
                       size: 16, color: AppColors.teal),
                   label: Text(
-                    'Pickup pinned: ${_pickupPoint!.latitude.toStringAsFixed(2)}, '
-                    '${_pickupPoint!.longitude.toStringAsFixed(2)}',
+                    trf('bk_pickupPinned', {'lat': _pickupPoint!.latitude.toStringAsFixed(2), 'lng': _pickupPoint!.longitude.toStringAsFixed(2)}),
                   ),
                 ),
               ],
@@ -403,7 +401,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: tr('itemCost'),
-                  hintText: 'Example: 850',
+                  hintText: tr('bk_itemCostExample'),
                 ),
               ),
               const SizedBox(height: 6),
@@ -442,8 +440,8 @@ class _BookingScreenState extends State<BookingScreen> {
               controller: _address,
               decoration: InputDecoration(
                 hintText: _isDelivery
-                    ? 'House, street, area — where the rider delivers'
-                    : 'House, street, area',
+                    ? tr('bk_deliveryAddressHint')
+                    : tr('bk_addressHint'),
               ),
             ),
             const SizedBox(height: 8),
@@ -458,8 +456,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 avatar: const Icon(Icons.location_on,
                     size: 16, color: AppColors.teal),
                 label: Text(
-                  'Pinned: ${_pickedPoint!.latitude.toStringAsFixed(2)}, '
-                  '${_pickedPoint!.longitude.toStringAsFixed(2)}',
+                  trf('bk_pinned', {'lat': _pickedPoint!.latitude.toStringAsFixed(2), 'lng': _pickedPoint!.longitude.toStringAsFixed(2)}),
                 ),
               ),
             ],

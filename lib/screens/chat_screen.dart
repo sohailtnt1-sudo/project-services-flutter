@@ -15,7 +15,7 @@ String _timeLabel(DateTime dt) {
   final time =
       '${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
   if (day == today) return time;
-  if (day == today.subtract(const Duration(days: 1))) return 'Yesterday';
+  if (day == today.subtract(const Duration(days: 1))) return tr('chat_yesterday');
   return '${dt.day}/${dt.month}/${dt.year}';
 }
 
@@ -29,23 +29,52 @@ class ConversationsScreen extends StatefulWidget {
 
 class _ConversationsScreenState extends State<ConversationsScreen> {
   late Future<List<Conversation>> _convs;
+  RealtimeChannel? _channel;
 
   @override
   void initState() {
     super.initState();
     _convs = fetchMyConversations();
+    // Live badge: the list used to fetch once and then go stale — a
+    // message read from a booking's Chat button, a mark-read that
+    // lands after the list's refresh, or a new incoming message left
+    // the unread badge wrong (seen 20 Nov 2026: badge stayed 1 after
+    // the "Cash received: Rs. 1200" message was read, because the list
+    // had been fetched before the mark-read landed). Any insert or
+    // update on messages re-fetches the list.
+    _channel = db.channel('my-conversations');
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+    ]) {
+      _channel!.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'messages',
+        callback: (_) => _refresh(),
+      );
+    }
+    _channel!.subscribe();
+  }
+
+  @override
+  void dispose() {
+    if (_channel != null) {
+      db.removeChannel(_channel!);
+    }
+    super.dispose();
   }
 
   Future<void> _refresh() async {
     final fresh = fetchMyConversations();
-    setState(() => _convs = fresh);
+    if (mounted) setState(() => _convs = fresh);
     await fresh;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Messages')),
+      appBar: AppBar(title: Text(tr('messages'))),
       body: FutureBuilder<List<Conversation>>(
         future: _convs,
         builder: (context, snap) {
@@ -56,31 +85,30 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Could not load chats: ${snap.error}',
+                child: Text(trf('chat_loadError', {'error': snap.error.toString()}),
                     textAlign: TextAlign.center),
               ),
             );
           }
           final list = snap.data ?? [];
           if (list.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(32),
+                padding: const EdgeInsets.all(32),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.chat_bubble_outline,
+                    const Icon(Icons.chat_bubble_outline,
                         size: 56, color: AppColors.inkSoft),
-                    SizedBox(height: 16),
-                    Text('No chats yet',
-                        style: TextStyle(
+                    const SizedBox(height: 16),
+                    Text(tr('chat_noChats'),
+                        style: const TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     Text(
-                      'Open a booking and tap Chat to message your technician or customer. '
-                      'Your chats will appear here.',
+                      tr('chat_noChatsHint'),
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.inkSoft),
+                      style: const TextStyle(color: AppColors.inkSoft),
                     ),
                   ],
                 ),
@@ -212,7 +240,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Could not load messages: $e';
+        _error = trf('chat_loadMessagesError', {'error': e.toString()});
         _loading = false;
       });
     }
@@ -258,7 +286,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       if (!mounted) return;
       setState(() => _sending = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not send: $e')),
+        SnackBar(content: Text(trf('chat_sendError', {'error': e.toString()}))),
       );
     }
   }
@@ -308,13 +336,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 : _error != null
                     ? Center(child: Text(_error!))
                     : _messages.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Padding(
-                              padding: EdgeInsets.all(32),
+                              padding: const EdgeInsets.all(32),
                               child: Text(
-                                'No messages yet. Say hello to start the conversation.',
+                                tr('chat_noMessages'),
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: AppColors.inkSoft),
+                                style: const TextStyle(color: AppColors.inkSoft),
                               ),
                             ),
                           )
@@ -385,8 +413,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     child: TextField(
                       controller: _input,
                       textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message…',
+                      decoration: InputDecoration(
+                        hintText: tr('chat_typeMessage'),
                       ),
                       onSubmitted: (_) => _send(),
                     ),

@@ -1,5 +1,6 @@
 // Services in a category (live prices) → providers for a service.
 import 'package:flutter/material.dart';
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../theme.dart';
@@ -35,9 +36,9 @@ class _ServicesScreenState extends State<ServicesScreen> {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snap.hasError) return Center(child: Text('Could not load services: ${snap.error}'));
+          if (snap.hasError) return Center(child: Text(trf('svc_loadError', {'error': '${snap.error}'})));
           final list = snap.data ?? [];
-          if (list.isEmpty) return const Center(child: Text('No services in this category yet.'));
+          if (list.isEmpty) return Center(child: Text(tr('svc_noServices')));
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: list.length,

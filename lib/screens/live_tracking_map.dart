@@ -15,6 +15,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../l10n/strings.dart';
 import '../models.dart';
 import '../repository.dart';
 import '../services/location_service.dart';
@@ -147,9 +148,8 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
     if (!mounted) return;
     if (pos == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Location permission nahi mili — apni location nahi dikhayi ja sakti'),
+        SnackBar(
+          content: Text(tr('ltm_noLocationPermission')),
         ),
       );
       return;
@@ -289,18 +289,22 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
 
     String headerText;
     if (_stoppedStatus != null) {
-      headerText =
-          'Job ${statusLabel(_stoppedStatus!)} — live tracking band ho gaya hai.';
+      headerText = trf('ltm_trackingStopped',
+          {'status': statusLabel(_stoppedStatus!)});
     } else if (providerPoint == null) {
-      headerText = 'Locating technician…';
+      headerText = tr('ltm_locatingTechnician');
     } else if (_route != null) {
-      headerText =
-          'Technician ${_route!.distanceKm.toStringAsFixed(1)} km away • ETA ~${_route!.durationLabel}';
+      headerText = trf('ltm_awayWithEta', {
+        'distance': _route!.distanceKm.toStringAsFixed(1),
+        'duration': _route!.durationLabel,
+      });
     } else if (destination != null) {
-      headerText =
-          'Technician ${distanceKmBetween(providerPoint, destination).toStringAsFixed(1)} km away';
+      headerText = trf('ltm_away', {
+        'distance':
+            distanceKmBetween(providerPoint, destination).toStringAsFixed(1),
+      });
     } else {
-      headerText = 'Technician live — on the way';
+      headerText = tr('ltm_technicianLive');
     }
 
     return Column(
@@ -417,7 +421,7 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
                     child: IconButton(
                       icon: const Icon(Icons.my_location,
                           color: AppColors.teal),
-                      tooltip: 'My location',
+                      tooltip: tr('ltm_myLocation'),
                       onPressed: _goToMyLocation,
                     ),
                   ),
@@ -436,35 +440,35 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
             ),
           ),
         if (b.providerId == null)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Abhi tak koi technician assign nahi hua.',
-              style: TextStyle(color: AppColors.inkSoft),
+              tr('ltm_noTechnicianAssigned'),
+              style: const TextStyle(color: AppColors.inkSoft),
             ),
           ),
         if (!_hasDestinationCoords && _address?.addressLine != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Destination: ${_address!.addressLine!}',
+              trf('ltm_destination', {'address': _address!.addressLine!}),
               style: const TextStyle(color: AppColors.inkSoft),
             ),
           ),
         if (!_hasDestinationCoords && _address?.addressLine == null)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Customer ne map pin nahi lagaya — address text se jayein.',
-              style: TextStyle(color: AppColors.inkSoft),
+              tr('ltm_noPin'),
+              style: const TextStyle(color: AppColors.inkSoft),
             ),
           ),
         if (_routeFallback && providerPoint != null && destination != null)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Route nahi mil saka — seedhi line dikhayi ja rahi hai',
-              style: TextStyle(color: AppColors.amberDark),
+              tr('ltm_routeFallback'),
+              style: const TextStyle(color: AppColors.amberDark),
             ),
           ),
       ],
