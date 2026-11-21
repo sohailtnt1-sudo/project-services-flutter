@@ -3,6 +3,11 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    // Google Services plugin (version declared in settings.gradle.kts):
+    // reads android/app/google-services.json and generates the Firebase
+    // string resources (google_app_id, API key). Without it Firebase
+    // never initialises and no FCM device token is ever saved.
+    id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }

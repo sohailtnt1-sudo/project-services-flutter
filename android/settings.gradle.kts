@@ -21,6 +21,9 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "9.3.1" apply false
     id("org.jetbrains.kotlin.android") version "2.4.20" apply false
+    // Google Services plugin: processes google-services.json at build time
+    // (generates google_app_id / API key string resources for Firebase).
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }
 
 include(":app")
