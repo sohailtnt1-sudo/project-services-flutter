@@ -360,7 +360,7 @@ class _LiveTrackingMapState extends State<LiveTrackingMap> {
                     TileLayer(
                       urlTemplate:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.projectservices.app',
+                      userAgentPackageName: 'com.asaankaam.pk',
                     ),
                     if (resolved != null)
                       PolylineLayer(

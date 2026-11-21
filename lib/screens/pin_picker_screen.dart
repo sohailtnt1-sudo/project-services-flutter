@@ -188,7 +188,7 @@ class _PinPickerScreenState extends State<PinPickerScreen> {
               TileLayer(
                 urlTemplate:
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.projectservices.app',
+                userAgentPackageName: 'com.asaankaam.pk',
               ),
               if (_pin != null)
                 MarkerLayer(

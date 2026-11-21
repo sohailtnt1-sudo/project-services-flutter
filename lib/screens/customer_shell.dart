@@ -348,7 +348,7 @@ class _HomeTabState extends State<_HomeTab> {
                         TileLayer(
                           urlTemplate:
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.projectservices.app',
+                          userAgentPackageName: 'com.asaankaam.pk',
                         ),
                         MarkerLayer(
                           markers: [
